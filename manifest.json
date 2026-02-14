@@ -1,0 +1,45 @@
+{
+  "name": "Bambu 3MF Viewer",
+  "short_name": "3MF Viewer",
+  "description": "Offline 3D viewer for Bambu Lab .3mf print files",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "./index.html",
+      "accept": {
+        "model/3mf": [".3mf"]
+      }
+    }
+  ],
+  "share_target": {
+    "action": "./index.html",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "file",
+          "accept": [".3mf", "model/3mf"]
+        }
+      ]
+    }
+  },
+  "categories": ["utilities"],
+  "lang": "en"
+}

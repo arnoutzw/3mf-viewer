@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#09090b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <title>Bambu 3MF Viewer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'sans-serif'],
+          mono: ['JetBrains Mono', 'monospace']
+        }
+      }
+    }
+  }
+  </script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; height: 100vh; width: 100vw; }
+    #viewer-canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #18181b; }
+    ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+    /* Drop zone transitions */
+    #drop-zone { transition: opacity 0.3s; }
+    #drop-zone.hidden { opacity: 0; pointer-events: none; }
+    #drop-zone.drag-over { background: rgba(245, 158, 11, 0.04) !important; }
+    #drop-zone.drag-over .drop-ring { border-color: #f59e0b; box-shadow: 0 0 40px rgba(245,158,11,0.15); }
+
+    /* Spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 0.8s linear infinite; }
+
+    /* Plate item states */
+    .plate-item { transition: all 0.15s; border-left: 3px solid transparent; }
+    .plate-item:hover { background: rgba(255,255,255,0.03); }
+    .plate-item.active { background: rgba(245,158,11,0.08); border-left-color: #f59e0b; }
+
+    /* Toolbar button states */
+    .tb-btn { transition: all 0.15s; }
+    .tb-btn:hover { background: rgba(255,255,255,0.06); }
+    .tb-btn:hover svg { color: #f4f4f5; }
+    .tb-btn.active svg { color: #f59e0b; }
+    .tb-btn .tooltip { transition: opacity 0.15s; }
+    .tb-btn:hover .tooltip { opacity: 1; }
+
+    /* Model name display toggle */
+    .model-name-hidden { display: none !important; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 font-sans">
+
+<!-- ── Drop Zone ── -->
+<div id="drop-zone" class="fixed inset-0 z-[1000] flex flex-col items-center justify-center bg-zinc-950/[.97] backdrop-blur-sm">
+  <div class="drop-ring w-44 h-44 border-[3px] border-dashed border-zinc-700 rounded-full flex items-center justify-center mb-6" style="transition: all 0.3s">
+    <svg class="w-14 h-14 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+  </div>
+  <h2 class="font-mono font-bold text-xl text-amber-500 mb-2">Drop a .3mf file</h2>
+  <p class="text-zinc-500 text-sm font-mono mb-5">Bambu Lab 3MF viewer &middot; works offline</p>
+  <button class="bg-amber-500 hover:bg-amber-400 text-zinc-900 font-mono font-bold px-6 py-2.5 rounded-lg transition-colors cursor-pointer" id="browse-btn">Open File</button>
+  <input type="file" id="file-input" accept=".3mf" hidden>
+</div>
+
+<!-- ── Loading Overlay ── -->
+<div id="loading-overlay" class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[2000] hidden items-center justify-center flex-col">
+  <div class="spinner w-11 h-11 border-[3px] border-zinc-700 border-t-amber-500 rounded-full mb-4"></div>
+  <div id="loading-text" class="text-sm text-zinc-500 font-mono">Loading model...</div>
+</div>
+
+<!-- ── Canvas ── -->
+<canvas id="viewer-canvas"></canvas>
+
+<!-- ── Top Bar ── -->
+<div id="top-bar" class="fixed top-4 left-4 right-4 flex items-center justify-between z-[100] pointer-events-none">
+  <div class="pointer-events-auto model-name-hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3.5 py-2 flex items-center gap-2 max-w-[380px]" id="model-name">
+    <svg class="w-4 h-4 text-amber-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 4.5v11L12 22l-9-4.5v-11z"/><path d="M12 22V12"/><path d="M3 6.5l9 5"/><path d="M21 6.5l-9 5"/></svg>
+    <span id="model-name-text" class="text-sm font-mono text-zinc-100 truncate"></span>
+  </div>
+  <button id="open-btn" class="pointer-events-auto model-name-hidden bg-zinc-900 border border-zinc-700 hover:border-amber-500/50 text-zinc-400 hover:text-amber-400 px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer">
+    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    Open
+  </button>
+</div>
+
+<!-- ── Plate Sidebar ── -->
+<div id="plate-sidebar" class="fixed top-[60px] left-4 bottom-[76px] w-[210px] bg-zinc-900 border border-zinc-700 rounded-lg overflow-y-auto z-[100] hidden">
+  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-zinc-500 px-3 pt-3 pb-1.5">Plates</div>
+  <div id="plate-list"></div>
+</div>
+
+<!-- ── Colors Panel ── -->
+<div id="colors-panel" class="fixed top-[60px] right-4 bg-zinc-900 border border-zinc-700 rounded-lg p-3 z-[100] hidden min-w-[130px]">
+  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-zinc-500 mb-2">Colors</div>
+  <div id="color-list"></div>
+</div>
+
+<!-- ── Model Info ── -->
+<div id="model-info" class="fixed bottom-[76px] right-4 bg-zinc-900 border border-zinc-700 rounded-lg p-3 z-[100] hidden text-xs text-zinc-500 font-mono leading-relaxed"></div>
+
+<!-- ── Bottom Toolbar ── -->
+<div id="bottom-bar" class="fixed bottom-5 left-1/2 -translate-x-1/2 hidden items-center gap-0.5 bg-zinc-900 border border-zinc-700 rounded-full px-2.5 py-1.5 z-[100]">
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-reset">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Reset</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+  </button>
+  <div class="w-px h-5 bg-zinc-700 mx-1"></div>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" data-view="front">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Front</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="1" fill="currentColor" opacity="0.15"/><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+  </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" data-view="back">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Back</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="1" opacity="0.3"/><rect x="6" y="2" width="16" height="16" rx="1" fill="currentColor" opacity="0.12" stroke="currentColor"/></svg>
+  </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" data-view="left">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Left</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v16h8V4z" fill="currentColor" opacity="0.15"/><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+  </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" data-view="right">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Right</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 4v16h8V4z" fill="currentColor" opacity="0.15"/><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+  </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" data-view="top">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Top</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h16v8H4z" fill="currentColor" opacity="0.15"/><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+  </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" data-view="bottom">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Bottom</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 12h16v8H4z" fill="currentColor" opacity="0.15"/><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+  </button>
+  <div class="w-px h-5 bg-zinc-700 mx-1"></div>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-layflat">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Lay Flat</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L6 8h3v5h6V8h3L12 2z" fill="currentColor" opacity="0.15"/><path d="M12 2L6 8h3v5h6V8h3L12 2z"/><line x1="4" y1="18" x2="20" y2="18"/><line x1="4" y1="21" x2="20" y2="21"/></svg>
+  </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-layout">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Layout</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" fill="currentColor" opacity="0.15"/><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="4" rx="1" fill="currentColor" opacity="0.15"/><rect x="14" y="3" width="7" height="4" rx="1"/><rect x="14" y="11" width="7" height="10" rx="1" fill="currentColor" opacity="0.15"/><rect x="14" y="11" width="7" height="10" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1" fill="currentColor" opacity="0.15"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+  </button>
+  <button class="tb-btn active w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-bed">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Bed</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="14" width="20" height="4" rx="1" fill="currentColor" opacity="0.15"/><rect x="2" y="14" width="20" height="4" rx="1"/></svg>
+  </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-wireframe">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Wire</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+  </button>
+</div>
+
+<!-- Dependencies -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+
+// ─── State ───
+const BED_W = 256, BED_D = 256; // Bambu X1C build plate (mm)
+const BED_PAD = 5;              // keep 5mm from edges
+let scene, camera, renderer, controls;
+let modelGroup = null;
+let bedGroup = null;
+let plates = [];
+let activePlateIndex = 0;
+let wireframeMode = false;
+let bedVisible = true;
+let modelCenter = new THREE.Vector3();
+let modelSize = new THREE.Vector3();
+let cameraDistance = 300;
+
+// ─── DOM ───
+const canvas = document.getElementById('viewer-canvas');
+const dropZone = document.getElementById('drop-zone');
+const loadingOverlay = document.getElementById('loading-overlay');
+const loadingText = document.getElementById('loading-text');
+const modelNameEl = document.getElementById('model-name');
+const modelNameText = document.getElementById('model-name-text');
+const plateSidebar = document.getElementById('plate-sidebar');
+const plateList = document.getElementById('plate-list');
+const colorsPanel = document.getElementById('colors-panel');
+const colorList = document.getElementById('color-list');
+const modelInfo = document.getElementById('model-info');
+const bottomBar = document.getElementById('bottom-bar');
+const openBtn = document.getElementById('open-btn');
+const fileInput = document.getElementById('file-input');
+
+// ─── Init ───
+function initScene() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x3f3f46); // zinc-700 — grey for contrast with bed/parts
+
+  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
+  camera.position.set(200, 200, 200);
+
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+  dirLight.position.set(150, 300, 200);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.set(2048, 2048);
+  dirLight.shadow.camera.near = 1;
+  dirLight.shadow.camera.far = 1500;
+  dirLight.shadow.camera.left = -400;
+  dirLight.shadow.camera.right = 400;
+  dirLight.shadow.camera.top = 400;
+  dirLight.shadow.camera.bottom = -400;
+  dirLight.shadow.bias = -0.0005;
+  scene.add(dirLight);
+
+  const fillLight = new THREE.DirectionalLight(0xaaccff, 0.35);
+  fillLight.position.set(-100, 50, -100);
+  scene.add(fillLight);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.3));
+
+  // Controls
+  controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.rotateSpeed = 0.8;
+  controls.panSpeed = 0.6;
+  controls.minDistance = 10;
+  controls.maxDistance = 2000;
+
+  createBed(256, 256);
+  window.addEventListener('resize', onResize);
+  animate();
+}
+
+function createBed(w, d) {
+  bedGroup = new THREE.Group();
+
+  // Load Bambu buildplate STL
+  const stlLoader = new STLLoader();
+  stlLoader.load('./base.stl', (geometry) => {
+    // STL uses X/Y for plate surface, Z for height — rotate so Y is up
+    geometry.rotateX(-Math.PI / 2);
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    const cx = (box.min.x + box.max.x) / 2;
+    const cz = (box.min.z + box.max.z) / 2;
+    geometry.translate(-cx, 0, -cz);
+
+    const plateMat = new THREE.MeshStandardMaterial({
+      color: 0x27272a, metalness: 0.6, roughness: 0.35 // zinc-800
+    });
+    const plateMesh = new THREE.Mesh(geometry, plateMat);
+    plateMesh.receiveShadow = true;
+    bedGroup.add(plateMesh);
+  }, undefined, (err) => {
+    // Fallback: simple box if STL fails to load
+    console.warn('Failed to load buildplate STL, using fallback:', err);
+    const plateMat = new THREE.MeshStandardMaterial({ color: 0x27272a, metalness: 0.6, roughness: 0.35 });
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(w, 1.5, d), plateMat);
+    plate.position.y = -0.75;
+    plate.receiveShadow = true;
+    bedGroup.add(plate);
+  });
+
+  // Grid overlay
+  const grid = new THREE.GridHelper(Math.max(w, d), Math.max(w, d) / 10, 0x3f3f46, 0x27272a); // zinc-700 / zinc-800
+  grid.position.y = 0.01;
+  bedGroup.add(grid);
+
+  scene.add(bedGroup);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ─── 3MF Loading (custom Bambu-aware parser) ───
+async function load3MF(file) {
+  showLoading('Reading ' + file.name + '...');
+  dropZone.classList.add('hidden');
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    showLoading('Parsing 3MF...');
+
+    let object;
+    try {
+      const loader = new ThreeMFLoader();
+      object = loader.parse(arrayBuffer);
+    } catch (e) {
+      console.warn('ThreeMFLoader failed, trying custom Bambu parser:', e.message);
+      object = await parseBambu3MF(arrayBuffer);
+    }
+
+    if (!object) throw new Error('Could not parse 3MF');
+    processModel(object, file.name);
+  } catch (err) {
+    console.error('Load error:', err);
+    showLoading('Error: ' + err.message);
+    setTimeout(() => { hideLoading(); dropZone.classList.remove('hidden'); }, 3000);
+  }
+}
+
+async function parseBambu3MF(buffer) {
+  const fflate = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
+  const data = new Uint8Array(buffer);
+  const unzipped = fflate.unzipSync(data);
+
+  const group = new THREE.Group();
+  const plateGroups = new Map();
+  const files = Object.keys(unzipped);
+  const modelFiles = files.filter(f => f.endsWith('.model'));
+  const stlFiles = files.filter(f => f.toLowerCase().endsWith('.stl'));
+
+  for (const modelFile of modelFiles) {
+    const xml = new TextDecoder().decode(unzipped[modelFile]);
+    const meshes = parseModelXML(xml);
+    for (const meshData of meshes) {
+      const geometry = createGeometryFromMesh(meshData);
+      // Apply item/component transform if present
+      if (meshData.transform) geometry.applyMatrix4(meshData.transform);
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      const color = meshData.color ? new THREE.Color(meshData.color) : new THREE.Color(0xf59e0b); // amber-500 default
+      const material = new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData.originalColor = color.clone();
+      const plateId = meshData.plateId || 0;
+      if (!plateGroups.has(plateId)) plateGroups.set(plateId, new THREE.Group());
+      plateGroups.get(plateId).add(mesh);
+    }
+  }
+
+  if (plateGroups.size === 0 && stlFiles.length > 0) {
+    for (const stlFile of stlFiles) {
+      const stlBuffer = unzipped[stlFile].buffer;
+      const geometry = parseSTLBuffer(stlBuffer);
+      if (geometry) {
+        const material = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        mesh.userData.originalColor = new THREE.Color(0xf59e0b);
+        if (!plateGroups.has(0)) plateGroups.set(0, new THREE.Group());
+        plateGroups.get(0).add(mesh);
+      }
+    }
+  }
+
+  if (plateGroups.size === 0) throw new Error('No geometry found in 3MF file');
+  const sortedPlates = [...plateGroups.entries()].sort((a, b) => a[0] - b[0]);
+  for (const [id, pg] of sortedPlates) group.add(pg);
+  return group;
+}
+
+function parseModelXML(xml) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, 'application/xml');
+  const colorMap = new Map();
+
+  // 1. Build color map from <basematerials> / <base displaycolor="...">
+  doc.querySelectorAll('*').forEach(el => {
+    if (el.localName === 'base' && el.getAttribute('displaycolor')) {
+      const parent = el.parentElement;
+      const parentId = parent?.getAttribute('id');
+      const idx = Array.from(parent?.children || []).indexOf(el);
+      colorMap.set(`${parentId}_${idx}`, el.getAttribute('displaycolor'));
+    }
+  });
+
+  // 2. Parse <object> elements → collect meshes keyed by object id
+  const objectMeshes = new Map(); // objectId → [{ vertices, triangles, color }]
+  doc.querySelectorAll('*').forEach(el => {
+    if (el.localName !== 'mesh') return;
+    const vertices = [], triangles = [];
+    let meshColor = null;
+
+    el.querySelectorAll('*').forEach(child => {
+      if (child.localName === 'vertex') {
+        vertices.push(parseFloat(child.getAttribute('x')||0), parseFloat(child.getAttribute('y')||0), parseFloat(child.getAttribute('z')||0));
+      }
+      if (child.localName === 'triangle') {
+        triangles.push(parseInt(child.getAttribute('v1')||0), parseInt(child.getAttribute('v2')||0), parseInt(child.getAttribute('v3')||0));
+        const pid = child.getAttribute('pid'), p1 = child.getAttribute('p1');
+        if (pid && p1 && !meshColor) meshColor = colorMap.get(`${pid}_${p1}`);
+      }
+    });
+
+    if (vertices.length > 0 && triangles.length > 0) {
+      const objEl = el.closest('object') || el.parentElement;
+      const objId = objEl?.getAttribute('id') || '0';
+      const pid = objEl?.getAttribute('pid'), pindex = objEl?.getAttribute('pindex');
+      if (!meshColor && pid && pindex !== null) meshColor = colorMap.get(`${pid}_${pindex}`);
+      if (!objectMeshes.has(objId)) objectMeshes.set(objId, []);
+      objectMeshes.get(objId).push({ vertices, triangles, color: meshColor || null });
+    }
+  });
+
+  // 3. Parse <item> elements → get objectid, transform, partnumber (plate)
+  //    Also handle <component> children inside objects for assemblies
+  const componentMap = new Map(); // objectId → [{ objectid, transform }]
+  doc.querySelectorAll('*').forEach(el => {
+    if (el.localName === 'component') {
+      const parentObj = el.closest('object');
+      const parentId = parentObj?.getAttribute('id') || '0';
+      if (!componentMap.has(parentId)) componentMap.set(parentId, []);
+      componentMap.set(parentId, [...(componentMap.get(parentId) || []), {
+        objectid: el.getAttribute('objectid'),
+        transform: parseTransformAttr(el.getAttribute('transform'))
+      }]);
+    }
+  });
+
+  const results = [];
+  doc.querySelectorAll('*').forEach(el => {
+    if (el.localName !== 'item') return;
+    const objectid = el.getAttribute('objectid');
+    const transform = parseTransformAttr(el.getAttribute('transform'));
+    const partnumber = el.getAttribute('partnumber') || '';
+    const plateMatch = partnumber.match(/(\d+)/);
+    const plateId = plateMatch ? parseInt(plateMatch[1]) : 0;
+
+    // Resolve: if the object has components, expand them; otherwise use its meshes directly
+    const components = componentMap.get(objectid);
+    if (components && components.length > 0) {
+      for (const comp of components) {
+        const meshes = objectMeshes.get(comp.objectid) || [];
+        // Combine item transform with component transform
+        const combinedXform = multiplyTransforms(transform, comp.transform);
+        for (const m of meshes) {
+          results.push({ ...m, plateId, transform: combinedXform });
+        }
+      }
+    } else {
+      const meshes = objectMeshes.get(objectid) || [];
+      for (const m of meshes) {
+        results.push({ ...m, plateId, transform });
+      }
+    }
+  });
+
+  // If no <item> elements found, fall back to raw meshes without transforms
+  if (results.length === 0) {
+    for (const [, meshArr] of objectMeshes) {
+      for (const m of meshArr) results.push({ ...m, plateId: 0, transform: null });
+    }
+  }
+
+  return results;
+}
+
+// Parse 3MF transform attribute "m00 m01 m02 m10 m11 m12 m20 m21 m22 m30 m31 m32" → THREE.Matrix4
+function parseTransformAttr(attr) {
+  if (!attr) return null;
+  const v = attr.trim().split(/\s+/).map(Number);
+  if (v.length < 12) return null;
+  // 3MF stores a 4x3 matrix (row-major: 3 rotation rows + 1 translation row)
+  // Three.js Matrix4 is column-major
+  const m = new THREE.Matrix4();
+  m.set(
+    v[0], v[3], v[6], v[9],
+    v[1], v[4], v[7], v[10],
+    v[2], v[5], v[8], v[11],
+    0,    0,    0,    1
+  );
+  return m;
+}
+
+function multiplyTransforms(a, b) {
+  if (!a && !b) return null;
+  if (!a) return b;
+  if (!b) return a;
+  return new THREE.Matrix4().multiplyMatrices(a, b);
+}
+
+function createGeometryFromMesh(meshData) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(meshData.vertices), 3));
+  geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(meshData.triangles), 1));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  return geometry;
+}
+
+function parseSTLBuffer(buffer) {
+  const view = new DataView(buffer.slice ? buffer : buffer.buffer || buffer);
+  if (buffer.byteLength < 84) return null;
+  const triCount = view.getUint32(80, true);
+  if (80 + 4 + triCount * 50 !== buffer.byteLength) return parseASCIISTL(new TextDecoder().decode(new Uint8Array(buffer)));
+
+  const positions = new Float32Array(triCount * 9);
+  const normals = new Float32Array(triCount * 9);
+  let offset = 84;
+  for (let i = 0; i < triCount; i++) {
+    const nx = view.getFloat32(offset, true); offset += 4;
+    const ny = view.getFloat32(offset, true); offset += 4;
+    const nz = view.getFloat32(offset, true); offset += 4;
+    for (let j = 0; j < 3; j++) {
+      const idx = i * 9 + j * 3;
+      positions[idx] = view.getFloat32(offset, true); offset += 4;
+      positions[idx+1] = view.getFloat32(offset, true); offset += 4;
+      positions[idx+2] = view.getFloat32(offset, true); offset += 4;
+      normals[idx] = nx; normals[idx+1] = ny; normals[idx+2] = nz;
+    }
+    offset += 2;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  return geometry;
+}
+
+function parseASCIISTL(text) {
+  const positions = [];
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (t.startsWith('vertex')) { const p = t.split(/\s+/); positions.push(parseFloat(p[1]), parseFloat(p[2]), parseFloat(p[3])); }
+  }
+  if (!positions.length) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+// ─── Model Processing ───
+function processModel(object, fileName) {
+  if (modelGroup) {
+    scene.remove(modelGroup);
+    modelGroup.traverse(c => { c.geometry?.dispose(); if(c.material) (Array.isArray(c.material)?c.material:[c.material]).forEach(m=>m.dispose()); });
+  }
+
+  modelGroup = new THREE.Group();
+  plates = [];
+  const hasSubGroups = object.children.some(c => c.isGroup && c.children.length > 0);
+
+  if (hasSubGroups) {
+    object.children.forEach((child, i) => {
+      if (child.isGroup && child.children.length > 0) {
+        const pg = new THREE.Group();
+        child.traverse(m => { if (m.isMesh) { ensureMaterial(m); pg.add(m.clone()); } });
+        pg.visible = false;
+        plates.push({ group: pg, name: child.name || 'Plate ' + (i + 1), colors: getColors(pg) });
+        modelGroup.add(pg);
+      } else if (child.isMesh) {
+        if (!plates.length) { const pg = new THREE.Group(); pg.visible = false; plates.push({ group: pg, name: 'Plate 1', colors: [] }); modelGroup.add(pg); }
+        ensureMaterial(child); plates[0].group.add(child.clone());
+      }
+    });
+  }
+
+  if (!plates.length) {
+    const pg = new THREE.Group();
+    object.traverse(m => { if (m.isMesh) { ensureMaterial(m); pg.add(m.clone()); } });
+    pg.visible = false;
+    plates.push({ group: pg, name: 'All Objects', colors: getColors(pg) });
+    modelGroup.add(pg);
+  }
+
+  // Auto-layout all parts onto beds
+  autoLayoutPlates();
+  plates.forEach(p => { p.colors = getColors(p.group); });
+  scene.add(modelGroup);
+  activePlateIndex = 0;
+  showPlate(0);
+  updateUI(fileName);
+  hideLoading();
+}
+
+// ─── Lay Flat: rotate each mesh so its largest planar face sits on the bed ───
+
+function layFlatMesh(mesh) {
+  const geo = mesh.geometry;
+  if (!geo || !geo.attributes.position) return;
+
+  const pos = geo.attributes.position;
+  const idx = geo.index;
+  const triCount = idx ? idx.count / 3 : pos.count / 3;
+  if (triCount < 1) return;
+
+  // 1. Collect face normals + areas
+  const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3();
+  const edge1 = new THREE.Vector3(), edge2 = new THREE.Vector3(), normal = new THREE.Vector3();
+  const faces = []; // { normal: Vector3, area: number }
+
+  for (let i = 0; i < triCount; i++) {
+    let ia, ib, ic;
+    if (idx) { ia = idx.getX(i * 3); ib = idx.getX(i * 3 + 1); ic = idx.getX(i * 3 + 2); }
+    else { ia = i * 3; ib = i * 3 + 1; ic = i * 3 + 2; }
+    vA.fromBufferAttribute(pos, ia);
+    vB.fromBufferAttribute(pos, ib);
+    vC.fromBufferAttribute(pos, ic);
+    // Apply mesh world matrix to get true orientation
+    vA.applyMatrix4(mesh.matrixWorld);
+    vB.applyMatrix4(mesh.matrixWorld);
+    vC.applyMatrix4(mesh.matrixWorld);
+    edge1.subVectors(vB, vA);
+    edge2.subVectors(vC, vA);
+    normal.crossVectors(edge1, edge2);
+    const area = normal.length() * 0.5;
+    if (area < 0.001) continue;
+    normal.normalize();
+    faces.push({ nx: normal.x, ny: normal.y, nz: normal.z, area });
+  }
+
+  if (faces.length === 0) return;
+
+  // 2. Cluster normals: group faces whose normals are within ~8° of each other
+  const clusters = []; // { nx, ny, nz, totalArea }
+  const threshold = Math.cos(8 * Math.PI / 180); // ~0.99
+
+  for (const f of faces) {
+    let matched = false;
+    for (const cl of clusters) {
+      const dot = cl.nx * f.nx + cl.ny * f.ny + cl.nz * f.nz;
+      if (dot > threshold) {
+        // Weighted merge of normal direction
+        const w = cl.totalArea;
+        cl.nx = (cl.nx * w + f.nx * f.area) / (w + f.area);
+        cl.ny = (cl.ny * w + f.ny * f.area) / (w + f.area);
+        cl.nz = (cl.nz * w + f.nz * f.area) / (w + f.area);
+        const len = Math.sqrt(cl.nx ** 2 + cl.ny ** 2 + cl.nz ** 2);
+        cl.nx /= len; cl.ny /= len; cl.nz /= len;
+        cl.totalArea += f.area;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      clusters.push({ nx: f.nx, ny: f.ny, nz: f.nz, totalArea: f.area });
+    }
+  }
+
+  if (clusters.length === 0) return;
+
+  // 3. Pick the cluster with the largest total area
+  clusters.sort((a, b) => b.totalArea - a.totalArea);
+
+  // Consider top candidates — prefer ones that are already near-horizontal or point downward
+  // This avoids flipping a model that's already well-oriented
+  const bestCluster = clusters[0];
+  const faceNormal = new THREE.Vector3(bestCluster.nx, bestCluster.ny, bestCluster.nz);
+
+  // 4. Compute rotation to make this face normal point downward (0, -1, 0)
+  const down = new THREE.Vector3(0, -1, 0);
+
+  // If the face already points down (within 5°), skip
+  if (faceNormal.dot(down) > Math.cos(5 * Math.PI / 180)) return;
+
+  // Also check if it points up — then we flip 180°
+  const quat = new THREE.Quaternion();
+  if (faceNormal.dot(down) < -0.9999) {
+    // Nearly opposite — rotate 180° around X
+    quat.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
+  } else {
+    quat.setFromUnitVectors(faceNormal, down);
+  }
+
+  // 5. Apply rotation around the mesh's own center
+  geo.computeBoundingBox();
+  const center = new THREE.Vector3();
+  geo.boundingBox.getCenter(center);
+  center.applyMatrix4(mesh.matrixWorld);
+
+  // Build transform: translate to origin, rotate, translate back
+  const m4 = new THREE.Matrix4();
+  const toOrigin = new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z);
+  const rotate = new THREE.Matrix4().makeRotationFromQuaternion(quat);
+  const fromOrigin = new THREE.Matrix4().makeTranslation(center.x, center.y, center.z);
+  m4.multiplyMatrices(fromOrigin, rotate);
+  m4.multiply(toOrigin);
+
+  // Apply to geometry directly (bake transform)
+  geo.applyMatrix4(m4);
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+
+  // Reset mesh position/rotation since we baked it
+  mesh.position.set(0, 0, 0);
+  mesh.rotation.set(0, 0, 0);
+  mesh.scale.set(1, 1, 1);
+  mesh.updateMatrixWorld(true);
+}
+
+// Apply lay-flat to all meshes in a group
+function layFlatGroup(group) {
+  group.children.forEach(c => { if (c.isMesh) layFlatMesh(c); });
+}
+
+// ─── Auto Layout: 2D bin-pack all meshes across plates to fit on bed ───
+
+// Collect every mesh across all current plates into a flat list with its XZ footprint
+function gatherMeshItems() {
+  const items = [];
+  for (const plate of plates) {
+    const toRemove = [];
+    plate.group.children.forEach(c => {
+      if (!c.isMesh || !c.geometry) return;
+      c.updateMatrixWorld(true);
+      if (!c.geometry.boundingBox) c.geometry.computeBoundingBox();
+      const box = c.geometry.boundingBox.clone().applyMatrix4(c.matrixWorld);
+      const sz = new THREE.Vector3(); box.getSize(sz);
+      const ctr = new THREE.Vector3(); box.getCenter(ctr);
+      items.push({ mesh: c, w: sz.x, d: sz.z, h: sz.y, cx: ctr.x, cz: ctr.z, cy: ctr.y, box });
+      toRemove.push(c);
+    });
+    toRemove.forEach(m => plate.group.remove(m));
+  }
+  // Sort largest-footprint-first for better packing
+  items.sort((a, b) => (b.w * b.d) - (a.w * a.d));
+  return items;
+}
+
+// Shelf-based 2D bin-packing onto a bedW × bedD area
+// Returns { placed: [{item, x, z}], overflow: [item] }
+function shelfPack(items, bedW, bedD, gap) {
+  const usable_w = bedW - 2 * BED_PAD;
+  const usable_d = bedD - 2 * BED_PAD;
+  const placed = [];
+  const overflow = [];
+
+  // Shelves: each shelf has a y-cursor (along Z axis on bed), height = tallest item in shelf
+  let shelfZ = 0;      // current shelf start Z
+  let shelfH = 0;      // current shelf depth (tallest item Z-size)
+  let cursorX = 0;     // X cursor within current shelf
+
+  for (const item of items) {
+    const iw = item.w + gap;
+    const id = item.d + gap;
+
+    // Item too big for the bed entirely? still place it, it'll just stick out
+    if (item.w > usable_w && item.d > usable_d) {
+      // Try rotating
+    }
+
+    // Try fitting in current shelf
+    if (cursorX + item.w <= usable_w && shelfZ + Math.max(shelfH, id) <= usable_d) {
+      // If this item is deeper than the shelf, check if it still fits
+      if (shelfZ + id <= usable_d) {
+        placed.push({ item, x: cursorX, z: shelfZ });
+        cursorX += iw;
+        shelfH = Math.max(shelfH, id);
+        continue;
+      }
+    }
+
+    // Start new shelf
+    if (cursorX > 0) {
+      shelfZ += shelfH;
+      cursorX = 0;
+      shelfH = 0;
+    }
+
+    // Fits on new shelf?
+    if (shelfZ + id <= usable_d && item.w <= usable_w) {
+      placed.push({ item, x: cursorX, z: shelfZ });
+      cursorX += iw;
+      shelfH = Math.max(shelfH, id);
+    } else {
+      overflow.push(item);
+    }
+  }
+
+  return { placed, overflow };
+}
+
+// Run auto-layout: lay flat + pack all meshes across plates
+function autoLayoutPlates() {
+  // Lay flat all meshes before computing footprints
+  plates.forEach(p => layFlatGroup(p.group));
+  const allItems = gatherMeshItems();
+  if (allItems.length === 0) return;
+
+  // Clear existing plates from modelGroup
+  plates.forEach(p => modelGroup.remove(p.group));
+  plates = [];
+
+  const gap = 8; // mm between objects
+  let remaining = allItems;
+  let plateNum = 1;
+
+  while (remaining.length > 0) {
+    const { placed, overflow } = shelfPack(remaining, BED_W, BED_D, gap);
+
+    if (placed.length === 0 && overflow.length > 0) {
+      // Items too large for bed — force-place them one per plate
+      const big = overflow.shift();
+      const pg = new THREE.Group();
+      pg.visible = false;
+      // Center the oversized part on the bed
+      big.mesh.position.x += -big.cx;
+      big.mesh.position.z += -big.cz;
+      // Ground it: bottom of mesh sits at Y=0
+      big.mesh.position.y += -(big.cy - big.h / 2);
+      pg.add(big.mesh);
+      plates.push({ group: pg, name: 'Plate ' + plateNum, colors: [] });
+      modelGroup.add(pg);
+      plateNum++;
+      remaining = overflow;
+      continue;
+    }
+
+    const pg = new THREE.Group();
+    pg.visible = false;
+
+    for (const { item, x, z } of placed) {
+      // Target position: bed origin is at center, so offset from -halfBed + pad
+      const targetX = -BED_W / 2 + BED_PAD + x + item.w / 2;
+      const targetZ = -BED_D / 2 + BED_PAD + z + item.d / 2;
+      item.mesh.position.x += targetX - item.cx;
+      item.mesh.position.z += targetZ - item.cz;
+      // Ground it at Y=0
+      item.mesh.position.y += -(item.cy - item.h / 2);
+      pg.add(item.mesh);
+    }
+
+    plates.push({ group: pg, name: 'Plate ' + plateNum, colors: [] });
+    modelGroup.add(pg);
+    plateNum++;
+    remaining = overflow;
+  }
+
+  // Clean up plate names if only one
+  if (plates.length === 1) plates[0].name = 'All Objects';
+  console.log(`Auto-layout: ${allItems.length} objects across ${plates.length} plate(s)`);
+}
+
+function ensureMaterial(mesh) {
+  if (!mesh.isMesh) return;
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  const col = mesh.material?.color?.clone() || new THREE.Color(0xf59e0b);
+  mesh.material = new THREE.MeshStandardMaterial({ color: col, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide });
+  mesh.userData.originalColor = col;
+  if (mesh.geometry) { mesh.geometry.computeVertexNormals(); mesh.geometry.computeBoundingBox(); }
+}
+
+function getColors(group) {
+  const map = new Map();
+  group.traverse(c => { if (c.isMesh && c.material?.color) { const h = c.material.color.getHexString(); if(!map.has(h)) map.set(h, c.material.color.clone()); }});
+  return [...map.values()];
+}
+
+// ─── Plate / Camera ───
+function showPlate(index) {
+  plates.forEach((p, i) => { p.group.visible = (i === index); });
+  activePlateIndex = index;
+  document.querySelectorAll('.plate-item').forEach((el, i) => el.classList.toggle('active', i === index));
+  updateColorsPanel(plates[index].colors);
+  fitCameraToGroup(plates[index].group);
+  updateModelInfo(plates[index]);
+}
+
+function fitCameraToGroup(group) {
+  const box = new THREE.Box3().setFromObject(group);
+  if (box.isEmpty()) return;
+  box.getCenter(modelCenter);
+  box.getSize(modelSize);
+  cameraDistance = Math.max(modelSize.x, modelSize.y, modelSize.z) * 1.8;
+  cameraDistance = Math.max(cameraDistance, 50);
+  controls.target.copy(modelCenter);
+  camera.position.set(modelCenter.x + cameraDistance * 0.6, modelCenter.y + cameraDistance * 0.5, modelCenter.z + cameraDistance * 0.6);
+  camera.lookAt(modelCenter);
+  controls.update();
+
+  scene.traverse(c => {
+    if (c.isDirectionalLight && c.castShadow) {
+      const e = cameraDistance * 1.5;
+      Object.assign(c.shadow.camera, { left: -e, right: e, top: e, bottom: -e, far: e * 4 });
+      c.position.set(modelCenter.x + e, modelCenter.y + e * 1.5, modelCenter.z + e);
+      c.target.position.copy(modelCenter);
+      c.shadow.camera.updateProjectionMatrix();
+    }
+  });
+}
+
+function setCameraView(view) {
+  const d = cameraDistance, c = modelCenter;
+  const pos = {
+    front: [c.x, c.y, c.z+d], back: [c.x, c.y, c.z-d],
+    left: [c.x-d, c.y, c.z], right: [c.x+d, c.y, c.z],
+    top: [c.x, c.y+d, c.z+0.01], bottom: [c.x, c.y-d, c.z+0.01],
+  }[view];
+  if (!pos) return;
+  const start = camera.position.clone(), end = new THREE.Vector3(...pos), t0 = performance.now();
+  (function anim(now) {
+    const t = Math.min((now - t0) / 400, 1);
+    camera.position.lerpVectors(start, end, 1 - Math.pow(1 - t, 3));
+    camera.lookAt(modelCenter); controls.update();
+    if (t < 1) requestAnimationFrame(anim);
+  })(t0);
+}
+
+// ─── UI ───
+function updateUI(fileName) {
+  modelNameText.textContent = fileName.replace('.3mf', '');
+  modelNameEl.classList.remove('model-name-hidden');
+  openBtn.classList.remove('model-name-hidden');
+
+  plateList.innerHTML = '';
+  if (plates.length > 1) {
+    plates.forEach((plate, i) => {
+      const item = document.createElement('div');
+      item.className = 'plate-item px-3 py-2.5 cursor-pointer flex items-center gap-2 text-sm font-mono text-zinc-300' + (i === 0 ? ' active' : '');
+      const dots = plate.colors.slice(0, 5).map(c =>
+        `<div class="w-2.5 h-2.5 rounded-full border border-white/10" style="background:#${c.getHexString()}"></div>`
+      ).join('');
+      item.innerHTML = `<div class="flex-1 min-w-0"><div class="truncate">${plate.name}</div><div class="flex gap-1 mt-1">${dots}</div></div>`;
+      item.onclick = () => showPlate(i);
+      plateList.appendChild(item);
+    });
+    plateSidebar.classList.remove('hidden');
+  } else {
+    plateSidebar.classList.add('hidden');
+  }
+  colorsPanel.classList.remove('hidden');
+  modelInfo.classList.remove('hidden');
+  bottomBar.style.display = 'flex';
+}
+
+function updateColorsPanel(colors) {
+  colorList.innerHTML = colors.length === 0
+    ? '<div class="text-xs text-zinc-500 font-mono">Default</div>'
+    : colors.map(c => `<div class="flex items-center gap-2 py-1"><div class="w-4 h-4 rounded border border-white/10" style="background:#${c.getHexString()}"></div><span class="text-xs font-mono text-zinc-400">#${c.getHexString()}</span></div>`).join('');
+}
+
+function updateModelInfo(plate) {
+  let tris = 0, meshes = 0;
+  plate.group.traverse(c => { if(c.isMesh && c.geometry) { meshes++; const idx = c.geometry.index; tris += idx ? idx.count/3 : (c.geometry.attributes.position?.count||0)/3; }});
+  modelInfo.innerHTML = `<div><span class="text-zinc-100">Objects:</span> ${meshes}</div><div><span class="text-zinc-100">Triangles:</span> ${Math.round(tris).toLocaleString()}</div><div><span class="text-zinc-100">Plates:</span> ${plates.length}</div>`;
+}
+
+function showLoading(t) { loadingText.textContent = t || 'Loading...'; loadingOverlay.style.display = 'flex'; }
+function hideLoading() { loadingOverlay.style.display = 'none'; }
+
+// ─── Events ───
+document.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+document.addEventListener('dragleave', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); });
+document.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer?.files[0];
+  if (f && f.name.toLowerCase().endsWith('.3mf')) load3MF(f);
+});
+
+document.getElementById('browse-btn').onclick = () => fileInput.click();
+openBtn.onclick = () => fileInput.click();
+fileInput.onchange = e => { const f = e.target.files[0]; if(f) load3MF(f); fileInput.value = ''; };
+
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setCameraView(b.dataset.view));
+document.getElementById('btn-reset').onclick = () => { if(plates.length) fitCameraToGroup(plates[activePlateIndex].group); };
+
+document.getElementById('btn-layflat').onclick = function() {
+  if (!modelGroup || plates.length === 0) return;
+  // Lay flat all meshes on the active plate, then re-ground them
+  const plate = plates[activePlateIndex];
+  layFlatGroup(plate.group);
+  // Re-ground each mesh at Y=0
+  plate.group.children.forEach(c => {
+    if (!c.isMesh || !c.geometry) return;
+    c.updateMatrixWorld(true);
+    if (!c.geometry.boundingBox) c.geometry.computeBoundingBox();
+    const box = c.geometry.boundingBox.clone().applyMatrix4(c.matrixWorld);
+    c.position.y -= box.min.y;
+  });
+  fitCameraToGroup(plate.group);
+};
+
+document.getElementById('btn-layout').onclick = function() {
+  if (!modelGroup || plates.length === 0) return;
+  autoLayoutPlates();
+  plates.forEach(p => { p.colors = getColors(p.group); });
+  activePlateIndex = 0;
+  showPlate(0);
+  updateUI(modelNameText.textContent + '.3mf');
+};
+
+document.getElementById('btn-bed').onclick = function() {
+  bedVisible = !bedVisible;
+  if(bedGroup) bedGroup.visible = bedVisible;
+  this.classList.toggle('active', bedVisible);
+};
+
+document.getElementById('btn-wireframe').onclick = function() {
+  wireframeMode = !wireframeMode;
+  this.classList.toggle('active', wireframeMode);
+  if(modelGroup) modelGroup.traverse(c => { if(c.isMesh && c.material) c.material.wireframe = wireframeMode; });
+};
+
+document.addEventListener('keydown', e => {
+  const k = e.key;
+  if(k==='r') document.getElementById('btn-reset').click();
+  if(k==='w') document.getElementById('btn-wireframe').click();
+  if(k==='b') document.getElementById('btn-bed').click();
+  if(k==='f') document.getElementById('btn-layflat').click();
+  if(k==='l') document.getElementById('btn-layout').click();
+  if(k==='1') setCameraView('front');
+  if(k==='2') setCameraView('back');
+  if(k==='3') setCameraView('left');
+  if(k==='4') setCameraView('right');
+  if(k==='5') setCameraView('top');
+  if(k==='6') setCameraView('bottom');
+  if(k==='[' && plates.length>1) showPlate(Math.max(0, activePlateIndex-1));
+  if(k===']' && plates.length>1) showPlate(Math.min(plates.length-1, activePlateIndex+1));
+});
+
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+// ─── Boot ───
+initScene();
+</script>
+</body>
+</html>
