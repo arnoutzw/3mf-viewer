@@ -723,37 +723,56 @@ function layFlatMesh(mesh) {
   }
   if (clusters.length === 0) return;
 
-  // 3. Evaluate top N candidates by simulating rotation + scoring support
+  // 3. Evaluate ALL face clusters × 2 orientations + 6 principal axes
   clusters.sort((a, b) => b.totalArea - a.totalArea);
-  const candidates = clusters.slice(0, Math.min(12, clusters.length));
   const down = new THREE.Vector3(0, -1, 0);
+  const up = new THREE.Vector3(0, 1, 0);
 
-  // Compute object center for rotation pivot
   geo.computeBoundingBox();
   const objCenter = new THREE.Vector3();
   geo.boundingBox.getCenter(objCenter);
   objCenter.applyMatrix4(mesh.matrixWorld);
 
+  const evalCandidates = []; // { q: Quaternion }
+
+  function makeQuat(fromVec, toVec) {
+    const q = new THREE.Quaternion();
+    const d = fromVec.dot(toVec);
+    if (d < -0.9999) { q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI); }
+    else if (d > 0.9999) { q.identity(); }
+    else { q.setFromUnitVectors(fromVec, toVec); }
+    return q;
+  }
+
+  // Every cluster, both orientations (no artificial penalty)
+  for (const cl of clusters) {
+    const faceN = new THREE.Vector3(cl.nx, cl.ny, cl.nz);
+    evalCandidates.push({ q: makeQuat(faceN, down) }); // this face on bed
+    evalCandidates.push({ q: makeQuat(faceN, up) });   // opposite face on bed
+  }
+
+  // 6 principal axes
+  for (const ax of [
+    new THREE.Vector3(1,0,0), new THREE.Vector3(-1,0,0),
+    new THREE.Vector3(0,1,0), new THREE.Vector3(0,-1,0),
+    new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,-1),
+  ]) {
+    evalCandidates.push({ q: makeQuat(ax, down) });
+  }
+
+  // Deduplicate near-identical quaternions
+  const uniqueCandidates = [];
+  for (const c of evalCandidates) {
+    if (!uniqueCandidates.some(u => u.q.angleTo(c.q) < 0.05)) {
+      uniqueCandidates.push(c);
+    }
+  }
+
   let bestScore = -Infinity;
   let bestQuat = null;
 
-  for (const cl of candidates) {
-    const faceN = new THREE.Vector3(cl.nx, cl.ny, cl.nz);
-
-    // Compute quaternion to rotate this face normal → down
-    const q = new THREE.Quaternion();
-    const d = faceN.dot(down);
-    if (d < -0.9999) {
-      q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
-    } else if (d > 0.9999) {
-      q.identity();
-    } else {
-      q.setFromUnitVectors(faceN, down);
-    }
-
-    // Simulate: rotate all world verts around objCenter, then evaluate
-    const score = evaluateOrientation(worldVerts, objCenter, q, cl.totalArea);
-
+  for (const { q } of uniqueCandidates) {
+    const score = evaluateOrientation(worldVerts, faces, objCenter, q);
     if (score > bestScore) {
       bestScore = score;
       bestQuat = q;
@@ -762,11 +781,10 @@ function layFlatMesh(mesh) {
 
   if (!bestQuat) return;
 
-  // Check if identity (no rotation needed)
   const identityTest = new THREE.Quaternion();
-  if (bestQuat.angleTo(identityTest) < 0.02) return; // < ~1°
+  if (bestQuat.angleTo(identityTest) < 0.02) return;
 
-  // 4. Apply winning rotation around object center
+  // 4. Apply winning rotation
   const toOrigin = new THREE.Matrix4().makeTranslation(-objCenter.x, -objCenter.y, -objCenter.z);
   const rotate = new THREE.Matrix4().makeRotationFromQuaternion(bestQuat);
   const fromOrigin = new THREE.Matrix4().makeTranslation(objCenter.x, objCenter.y, objCenter.z);
@@ -782,116 +800,142 @@ function layFlatMesh(mesh) {
   mesh.updateMatrixWorld(true);
 }
 
-// Score a candidate orientation: high = good (stable, flat contact, low floating)
-function evaluateOrientation(worldVerts, pivot, quat, contactArea) {
+// Score a candidate orientation by computing ACTUAL bed contact area, height, and support
+function evaluateOrientation(worldVerts, faces, pivot, quat) {
   const nVerts = worldVerts.length / 3;
+  const totalTris = nVerts / 3;
   const v = new THREE.Vector3();
 
-  // Rotate all verts and collect Y values + XZ grid for support analysis
-  const ys = new Float32Array(nVerts);
+  // Rotate all vertices
+  const ry = new Float32Array(nVerts); // rotated Y values
   let minY = Infinity, maxY = -Infinity;
-
   for (let i = 0; i < nVerts; i++) {
     v.set(worldVerts[i * 3], worldVerts[i * 3 + 1], worldVerts[i * 3 + 2]);
-    v.sub(pivot);
-    v.applyQuaternion(quat);
-    v.add(pivot);
-    ys[i] = v.y;
+    v.sub(pivot); v.applyQuaternion(quat); v.add(pivot);
+    ry[i] = v.y;
     if (v.y < minY) minY = v.y;
     if (v.y > maxY) maxY = v.y;
   }
 
   const totalH = maxY - minY;
-  if (totalH < 0.01) return contactArea; // flat object, any orientation is fine
+  if (totalH < 0.01) return 1000; // flat object, fine
 
-  // Ground offset: shift so minY=0
-  const groundY = minY;
+  const bedTol = Math.min(totalH * 0.03, 2.0) + 0.3; // adaptive tolerance
 
-  // Support analysis: divide XZ into grid cells and check connectivity to bed
-  // For each triangle, check if its lowest vertex touches the bed (within tolerance)
-  // Then check how much of the object's volume is "supported" vs "floating"
-  const bedTolerance = totalH * 0.02 + 0.5; // 2% of height + 0.5mm
-
-  // Count triangles that touch the bed vs float
-  let bedContactTris = 0;
-  let floatingTris = 0;
-  let totalTris = nVerts / 3;
+  // Compute ACTUAL bed contact area: sum area of triangles whose all 3 verts are near bed
+  let bedContactArea = 0;
+  let nearBedArea = 0; // at least 1 vert near bed
+  const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3();
+  const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), n = new THREE.Vector3();
 
   for (let t = 0; t < totalTris; t++) {
-    const y0 = ys[t * 3] - groundY;
-    const y1 = ys[t * 3 + 1] - groundY;
-    const y2 = ys[t * 3 + 2] - groundY;
-    const triMinY = Math.min(y0, y1, y2);
-    const triMaxY = Math.max(y0, y1, y2);
+    const y0 = ry[t * 3] - minY;
+    const y1 = ry[t * 3 + 1] - minY;
+    const y2 = ry[t * 3 + 2] - minY;
 
-    if (triMinY <= bedTolerance) {
-      bedContactTris++;
-    } else if (triMinY > totalH * 0.15) {
-      // Triangle is floating well above the bed with no geometry connecting it down
-      // Check: is there geometry in the column below this triangle?
-      // Simplified: just penalize triangles whose minimum Y is high above the bed
-      floatingTris++;
+    // Compute triangle area
+    const i0 = t * 3, i1 = t * 3 + 1, i2 = t * 3 + 2;
+    vA.set(worldVerts[i0*3], worldVerts[i0*3+1], worldVerts[i0*3+2]);
+    vB.set(worldVerts[i1*3], worldVerts[i1*3+1], worldVerts[i1*3+2]);
+    vC.set(worldVerts[i2*3], worldVerts[i2*3+1], worldVerts[i2*3+2]);
+    e1.subVectors(vB, vA); e2.subVectors(vC, vA);
+    const triArea = n.crossVectors(e1, e2).length() * 0.5;
+
+    if (y0 <= bedTol && y1 <= bedTol && y2 <= bedTol) {
+      bedContactArea += triArea;  // fully on bed
+    }
+    if (Math.min(y0, y1, y2) <= bedTol) {
+      nearBedArea += triArea;
     }
   }
 
-  // Column-based support check: divide XZ into a grid
-  // For each column, track min-Y of verts in that column
-  // "Floating" columns = those where geometry exists but doesn't reach the bed
-  const gridRes = 8;
-  const rotatedVerts = [];
-  for (let i = 0; i < nVerts; i++) {
-    v.set(worldVerts[i * 3], worldVerts[i * 3 + 1], worldVerts[i * 3 + 2]);
-    v.sub(pivot); v.applyQuaternion(quat); v.add(pivot);
-    rotatedVerts.push(v.x, v.y - groundY, v.z);
-  }
-
-  // Find XZ bounds
+  // Column support analysis (16×16 for better resolution)
+  const gridRes = 16;
+  const rx = new Float32Array(nVerts);
+  const rz = new Float32Array(nVerts);
   let xMin = Infinity, xMax = -Infinity, zMin = Infinity, zMax = -Infinity;
+
   for (let i = 0; i < nVerts; i++) {
-    const x = rotatedVerts[i * 3], z = rotatedVerts[i * 3 + 2];
-    if (x < xMin) xMin = x; if (x > xMax) xMax = x;
-    if (z < zMin) zMin = z; if (z > zMax) zMax = z;
+    v.set(worldVerts[i*3], worldVerts[i*3+1], worldVerts[i*3+2]);
+    v.sub(pivot); v.applyQuaternion(quat); v.add(pivot);
+    rx[i] = v.x; rz[i] = v.z;
+    if (v.x < xMin) xMin = v.x; if (v.x > xMax) xMax = v.x;
+    if (v.z < zMin) zMin = v.z; if (v.z > zMax) zMax = v.z;
   }
   const xSpan = xMax - xMin || 1, zSpan = zMax - zMin || 1;
 
-  // For each grid cell: track if geometry exists and if it reaches bed
   const cellHasGeo = new Uint8Array(gridRes * gridRes);
-  const cellTouchesBed = new Uint8Array(gridRes * gridRes);
+  const cellMinY = new Float32Array(gridRes * gridRes).fill(Infinity);
 
   for (let i = 0; i < nVerts; i++) {
-    const x = rotatedVerts[i * 3], y = rotatedVerts[i * 3 + 1], z = rotatedVerts[i * 3 + 2];
-    const gx = Math.min(gridRes - 1, Math.floor((x - xMin) / xSpan * gridRes));
-    const gz = Math.min(gridRes - 1, Math.floor((z - zMin) / zSpan * gridRes));
+    const gx = Math.min(gridRes-1, Math.floor((rx[i]-xMin)/xSpan*gridRes));
+    const gz = Math.min(gridRes-1, Math.floor((rz[i]-zMin)/zSpan*gridRes));
     const ci = gz * gridRes + gx;
     cellHasGeo[ci] = 1;
-    if (y <= bedTolerance) cellTouchesBed[ci] = 1;
+    const yg = ry[i] - minY;
+    if (yg < cellMinY[ci]) cellMinY[ci] = yg;
   }
 
-  let occupiedCells = 0, supportedCells = 0, floatingCells = 0;
+  let occupied = 0, supported = 0;
   for (let i = 0; i < gridRes * gridRes; i++) {
     if (cellHasGeo[i]) {
-      occupiedCells++;
-      if (cellTouchesBed[i]) supportedCells++;
-      else floatingCells++;
+      occupied++;
+      if (cellMinY[i] <= bedTol) supported++;
     }
   }
 
-  // Scoring:
-  // - contactArea: bigger flat face = better
-  // - supportRatio: fraction of XZ footprint touching bed (1.0 = fully supported)
-  // - heightPenalty: prefer shorter resulting height
-  // - floatingPenalty: penalize orientations with many floating columns
+  const supportRatio = occupied > 0 ? supported / occupied : 0;
+  const floatingRatio = 1 - supportRatio;
 
-  const supportRatio = occupiedCells > 0 ? supportedCells / occupiedCells : 0;
-  const floatingRatio = occupiedCells > 0 ? floatingCells / occupiedCells : 0;
-  const normalizedH = totalH;
+  // Center of gravity analysis: compute CoG height and lateral offset
+  let cogX = 0, cogY = 0, cogZ = 0;
+  for (let i = 0; i < nVerts; i++) {
+    cogX += rx[i]; cogY += (ry[i] - minY); cogZ += rz[i];
+  }
+  cogX /= nVerts; cogY /= nVerts; cogZ /= nVerts;
 
-  // Weighted score (higher = better)
+  // CoG height ratio: 0 = on bed, 1 = at top; lower is more stable
+  const cogHeightRatio = totalH > 0.01 ? cogY / totalH : 0;
+
+  // CoG lateral offset: how far CoG XZ is from supported footprint center
+  let supCX = 0, supCZ = 0, supCount = 0;
+  for (let i = 0; i < gridRes * gridRes; i++) {
+    if (cellHasGeo[i] && cellMinY[i] <= bedTol) {
+      const gx = i % gridRes, gz = Math.floor(i / gridRes);
+      supCX += xMin + (gx + 0.5) / gridRes * xSpan;
+      supCZ += zMin + (gz + 0.5) / gridRes * zSpan;
+      supCount++;
+    }
+  }
+  let cogLateralPenalty = 0;
+  if (supCount > 0) {
+    supCX /= supCount; supCZ /= supCount;
+    const dx = cogX - supCX, dz = cogZ - supCZ;
+    const lateralDist = Math.sqrt(dx * dx + dz * dz);
+    const footprintSpan = Math.max(xSpan, zSpan);
+    cogLateralPenalty = footprintSpan > 0.01 ? (lateralDist / footprintSpan) : 0;
+  }
+
+  // Aspect ratio: how "tippy" this orientation is (tall+narrow = bad)
+  const footprintArea = xSpan * zSpan;
+  const aspectPenalty = footprintArea > 0.01 ? (totalH * totalH) / footprintArea : 0;
+
+  // Combined CoG penalty scales with object dimensions so it competes with bedContactArea
+  // cogY is absolute mm above bed; cogHeightRatio × totalH recovers that
+  // Multiply ratio by totalH so a tall-standing thin object gets hammered
+  const cogPenalty =
+    cogHeightRatio * totalH * 3.0 +     // absolute CoG height in mm, weighted
+    cogLateralPenalty * totalH * 2.0 +   // lateral offset scaled by height
+    aspectPenalty * 5.0;                 // tall-and-narrow instability
+
+  // SCORING: all factors are independent, no contactArea multiplier bias
   const score =
-    contactArea * 1.0 +                    // prefer large contact face
-    supportRatio * contactArea * 3.0 -      // heavily reward full bed contact
-    floatingRatio * contactArea * 5.0 -     // heavily penalize floating geometry
-    normalizedH * 0.1;                      // slightly prefer shorter height
+    bedContactArea * 10.0 +           // THE key metric: actual flat area on bed
+    nearBedArea * 2.0 +               // partial contact also helps
+    supportRatio * 500 -              // reward columns reaching the bed
+    floatingRatio * 800 -             // penalize floating columns
+    totalH * 5.0 -                    // prefer shorter height
+    cogPenalty;                        // penalize high, off-center, or tippy CoG
 
   return score;
 }
