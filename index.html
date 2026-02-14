@@ -239,6 +239,7 @@ const MATERIALS = [
   { name: 'HIPS',          density: 1.04 },
 ];
 let selectedMaterialIdx = 0;
+let hasFilamentData = false; // true when 3MF provides per-object filament info
 let infillPercent = 20;    // default 20% infill
 let wallCount = 3;         // number of perimeter walls
 let nozzleDia = 0.4;       // nozzle diameter mm
@@ -382,12 +383,19 @@ async function load3MF(file) {
     showLoading('Parsing 3MF...');
 
     let object;
+    // Always try custom Bambu parser first — it handles Bambu-specific
+    // displaycolor, partnumber plates, and component assemblies correctly.
+    // Three's ThreeMFLoader silently drops these, defaulting all colors.
     try {
-      const loader = new ThreeMFLoader();
-      object = loader.parse(arrayBuffer);
-    } catch (e) {
-      console.warn('ThreeMFLoader failed, trying custom Bambu parser:', e.message);
       object = await parseBambu3MF(arrayBuffer);
+    } catch (e) {
+      console.warn('Bambu parser failed, trying ThreeMFLoader:', e.message);
+      try {
+        const loader = new ThreeMFLoader();
+        object = loader.parse(arrayBuffer);
+      } catch (e2) {
+        throw new Error('Both parsers failed: ' + e.message);
+      }
     }
 
     if (!object) throw new Error('Could not parse 3MF');
@@ -396,6 +404,24 @@ async function load3MF(file) {
     console.error('Load error:', err);
     showLoading('Error: ' + err.message);
     setTimeout(() => { hideLoading(); dropZone.classList.remove('hidden'); }, 3000);
+  }
+}
+
+// Normalize color strings from 3MF files.
+// Bambu uses 8-char hex with alpha (#RRGGBBAA) which Three.js cannot parse.
+// Strip alpha channel and handle edge cases.
+function parseColor(colorStr) {
+  if (!colorStr || typeof colorStr !== 'string') return new THREE.Color(0xf59e0b);
+  let s = colorStr.trim();
+  // #RRGGBBAA → #RRGGBB (strip alpha)
+  if (s.match(/^#[0-9a-f]{8}$/i)) s = s.slice(0, 7);
+  // #RGBA → #RGB (strip alpha from short form)
+  if (s.match(/^#[0-9a-f]{4}$/i)) s = s.slice(0, 4);
+  try {
+    return new THREE.Color(s);
+  } catch (e) {
+    console.warn('Could not parse color:', colorStr);
+    return new THREE.Color(0xf59e0b);
   }
 }
 
@@ -410,24 +436,282 @@ async function parseBambu3MF(buffer) {
   const modelFiles = files.filter(f => f.endsWith('.model'));
   const stlFiles = files.filter(f => f.toLowerCase().endsWith('.stl'));
 
+  // ── Bambu color system: extruder-based ──
+  // Bambu stores colors NOT in standard 3MF basematerials, but via:
+  //   1. project_settings.config (JSON) → filament_colour array (per extruder slot)
+  //   2. model_settings.config (XML) → <object id="N"><metadata key="extruder" value="M"/>
+  // We parse both to build objectId → color mapping.
+
+  // Step A: Extract filament colors and material info from project_settings.config
+  let filamentColors = []; // index 0 = extruder 1, etc.
+  let filamentMaterials = []; // per-extruder: { type, density, name, vendor }
+  const projFile = files.find(f => f.endsWith('project_settings.config'));
+  if (projFile) {
+    try {
+      const projJson = JSON.parse(new TextDecoder().decode(unzipped[projFile]));
+      // Bambu uses filament_colour (array of hex strings like "#FF0000FF")
+      const rawColors = projJson.filament_colour || projJson.filament_color || [];
+      filamentColors = (Array.isArray(rawColors) ? rawColors : [rawColors]).map(c => {
+        if (typeof c === 'string') return c.replace(/^"(.*)"$/, '$1').trim();
+        return null;
+      });
+      // Extract filament material data
+      const fTypes = projJson.filament_type || [];
+      const fDensity = projJson.filament_density || [];
+      const fSettings = projJson.filament_settings_id || [];
+      const fVendor = projJson.filament_vendor || [];
+      const slotCount = Math.max(filamentColors.length, fTypes.length);
+      for (let i = 0; i < slotCount; i++) {
+        filamentMaterials.push({
+          type: fTypes[i] || 'PLA',
+          density: parseFloat(fDensity[i]) || 1.24,
+          name: fSettings[i] || '',
+          vendor: fVendor[i] || ''
+        });
+      }
+      console.log('[3MF] Filament colors:', filamentColors);
+      console.log('[3MF] Filament materials:', filamentMaterials);
+      if (filamentMaterials.length > 0) group.userData.filamentMaterials = filamentMaterials;
+    } catch (e) { console.warn('[3MF] Failed to parse project_settings.config:', e.message); }
+  }
+
+  // Step B: Extract object → extruder mapping AND part names from model_settings.config
+  const objectExtruderMap = new Map(); // objectId → extruder number (1-based)
+  const objectNameMap = new Map(); // objectId → name string
+  const partNameMap = new Map(); // partId → name string (for sub-parts)
+  const objectPlateMap = new Map(); // objectId → platerId (from <plate><model_instance>)
+  const plateNameMap = new Map(); // platerId → plater_name string
+  const modelSettingsFile = files.find(f => f.endsWith('model_settings.config'));
+  if (modelSettingsFile) {
+    try {
+      const msXml = new TextDecoder().decode(unzipped[modelSettingsFile]);
+      const msDoc = new DOMParser().parseFromString(msXml, 'application/xml');
+      msDoc.querySelectorAll('object').forEach(obj => {
+        const oid = obj.getAttribute('id');
+        if (!oid) return;
+        // Read object-level metadata
+        let objName = '';
+        obj.querySelectorAll(':scope > metadata').forEach(md => {
+          if (md.getAttribute('key') === 'extruder') {
+            objectExtruderMap.set(oid, parseInt(md.getAttribute('value') || '1'));
+          }
+          if (md.getAttribute('key') === 'name') {
+            objName = md.getAttribute('value') || '';
+            objectNameMap.set(oid, objName);
+          }
+        });
+        // Read part-level metadata (sub-parts within an assembly)
+        obj.querySelectorAll('part').forEach(part => {
+          const pid = part.getAttribute('id');
+          if (!pid) return;
+          part.querySelectorAll('metadata').forEach(md => {
+            if (md.getAttribute('key') === 'name') {
+              partNameMap.set(pid, md.getAttribute('value') || '');
+            }
+          });
+        });
+      });
+      // Step B2: Parse <plate> elements for object → plate assignment and plate names
+      msDoc.querySelectorAll('plate').forEach(plate => {
+        let platerId = 0, platerName = '';
+        plate.querySelectorAll(':scope > metadata').forEach(md => {
+          if (md.getAttribute('key') === 'plater_id') platerId = parseInt(md.getAttribute('value') || '0');
+          if (md.getAttribute('key') === 'plater_name') platerName = md.getAttribute('value') || '';
+        });
+        if (platerName) plateNameMap.set(platerId, platerName);
+        plate.querySelectorAll('model_instance').forEach(inst => {
+          let objId = '';
+          inst.querySelectorAll('metadata').forEach(md => {
+            if (md.getAttribute('key') === 'object_id') objId = md.getAttribute('value') || '';
+          });
+          if (objId) objectPlateMap.set(objId, platerId);
+        });
+      });
+      console.log('[3MF] Object names:', Object.fromEntries(objectNameMap));
+      console.log('[3MF] Part names:', Object.fromEntries(partNameMap));
+      console.log('[3MF] Plate assignments:', Object.fromEntries(objectPlateMap));
+      console.log('[3MF] Plate names:', Object.fromEntries(plateNameMap));
+    } catch (e) { console.warn('[3MF] Failed to parse model_settings.config:', e.message); }
+  }
+
+  // Step C: Build objectId → color by combining extruder map + filament colors
+  const objectColorMap = new Map();
+  for (const [objId, extruder] of objectExtruderMap) {
+    const colorIdx = extruder - 1; // extruder is 1-based
+    if (colorIdx >= 0 && colorIdx < filamentColors.length && filamentColors[colorIdx]) {
+      objectColorMap.set(objId, filamentColors[colorIdx]);
+    }
+  }
+  console.log('[3MF] Object colors:', Object.fromEntries(objectColorMap));
+
+  // Step D: Also check standard 3MF basematerials (fallback for non-Bambu files)
+  const globalColorMap = new Map();
   for (const modelFile of modelFiles) {
     const xml = new TextDecoder().decode(unzipped[modelFile]);
-    const meshes = parseModelXML(xml);
-    for (const meshData of meshes) {
-      const geometry = createGeometryFromMesh(meshData);
-      // Apply item/component transform if present
-      if (meshData.transform) geometry.applyMatrix4(meshData.transform);
-      geometry.computeVertexNormals();
-      geometry.computeBoundingBox();
-      const color = meshData.color ? new THREE.Color(meshData.color) : new THREE.Color(0xf59e0b); // amber-500 default
-      const material = new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.userData.originalColor = color.clone();
-      const plateId = meshData.plateId || 0;
-      if (!plateGroups.has(plateId)) plateGroups.set(plateId, new THREE.Group());
-      plateGroups.get(plateId).add(mesh);
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    doc.querySelectorAll('*').forEach(el => {
+      if (el.localName === 'base' && el.getAttribute('displaycolor')) {
+        const parent = el.parentElement;
+        const parentId = parent?.getAttribute('id');
+        const idx = Array.from(parent?.children || []).indexOf(el);
+        if (parentId != null) globalColorMap.set(`${parentId}_${idx}`, el.getAttribute('displaycolor'));
+      }
+      if (el.localName === 'basematerials' || el.localName === 'colorgroup') {
+        const gid = el.getAttribute('id');
+        if (gid) {
+          Array.from(el.children).forEach((child, ci) => {
+            const dc = child.getAttribute('displaycolor') || child.getAttribute('color');
+            if (dc) globalColorMap.set(`${gid}_${ci}`, dc);
+          });
+        }
+      }
+    });
+  }
+
+  // ── Cross-file resolution pipeline ──
+  // Bambu splits geometry across files: main model has items/components with p:path
+  // pointing to external .model files. We need to:
+  //   1. Parse all external files to collect meshes by (filePath, objectId)
+  //   2. Parse main model for items → components → resolve via p:path + objectid
+  //   3. Apply extruder-based colors from objectColorMap
+
+  // Build mesh index: "filepath::objectId" → { vertices, triangles }
+  const meshIndex = new Map(); // key: "normalizedPath::objId" → mesh data array
+  const pNS = 'http://schemas.microsoft.com/3dmanufacturing/production/2015/06';
+
+  for (const modelFile of modelFiles) {
+    const xml = new TextDecoder().decode(unzipped[modelFile]);
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    const normalizedPath = '/' + modelFile;
+
+    doc.querySelectorAll('*').forEach(el => {
+      if (el.localName !== 'mesh') return;
+      const vertices = [], triangles = [];
+      let meshColor = null;
+
+      el.querySelectorAll('*').forEach(child => {
+        if (child.localName === 'vertex') {
+          vertices.push(parseFloat(child.getAttribute('x')||0), parseFloat(child.getAttribute('y')||0), parseFloat(child.getAttribute('z')||0));
+        }
+        if (child.localName === 'triangle') {
+          triangles.push(parseInt(child.getAttribute('v1')||0), parseInt(child.getAttribute('v2')||0), parseInt(child.getAttribute('v3')||0));
+          // Standard 3MF color from basematerials
+          const pid = child.getAttribute('pid'), p1 = child.getAttribute('p1');
+          if (pid && p1 && !meshColor) meshColor = globalColorMap.get(`${pid}_${p1}`);
+        }
+      });
+
+      if (vertices.length > 0 && triangles.length > 0) {
+        const objEl = el.closest('object') || el.parentElement;
+        const objId = objEl?.getAttribute('id') || '0';
+        // Check object-level basematerials color
+        const objPid = objEl?.getAttribute('pid'), objPindex = objEl?.getAttribute('pindex');
+        if (!meshColor && objPid && objPindex != null) meshColor = globalColorMap.get(`${objPid}_${objPindex}`);
+
+        const key = `${normalizedPath}::${objId}`;
+        if (!meshIndex.has(key)) meshIndex.set(key, []);
+        meshIndex.get(key).push({ vertices, triangles, color: meshColor });
+      }
+    });
+  }
+
+  // Find main model file (the one with <build> items that have components with p:path)
+  const mainModelFile = modelFiles.find(f => f.includes('3dmodel.model')) || modelFiles[0];
+  const mainXml = new TextDecoder().decode(unzipped[mainModelFile]);
+  const mainDoc = new DOMParser().parseFromString(mainXml, 'application/xml');
+
+  // Parse components from main model (these reference external files via p:path)
+  const assemblyMap = new Map(); // objectId → [{ objectid, path, transform }]
+  mainDoc.querySelectorAll('*').forEach(el => {
+    if (el.localName === 'component') {
+      const parentObj = el.closest('object');
+      const parentId = parentObj?.getAttribute('id') || '0';
+      const compObjId = el.getAttribute('objectid');
+      const pPath = el.getAttributeNS(pNS, 'path') || el.getAttribute('p:path') || '';
+      const transform = parseTransformAttr(el.getAttribute('transform'));
+      if (!assemblyMap.has(parentId)) assemblyMap.set(parentId, []);
+      assemblyMap.get(parentId).push({ objectid: compObjId, path: pPath, transform });
+    }
+  });
+
+  // Parse build items from main model
+  mainDoc.querySelectorAll('*').forEach(el => {
+    if (el.localName !== 'item') return;
+    const objectid = el.getAttribute('objectid');
+    const itemTransform = parseTransformAttr(el.getAttribute('transform'));
+    // Use Bambu plate assignment from model_settings.config, fall back to partnumber
+    const bambuPlate = objectPlateMap.get(objectid);
+    let plateId;
+    if (bambuPlate !== undefined) {
+      plateId = bambuPlate;
+    } else {
+      const partnumber = el.getAttribute('partnumber') || '';
+      const plateMatch = partnumber.match(/(\d+)/);
+      plateId = plateMatch ? parseInt(plateMatch[1]) : 0;
+    }
+
+    // Get color and material from Bambu extruder mapping for this item's assembly object
+    const extruderColor = objectColorMap.get(objectid) || null;
+    const extruderNum = objectExtruderMap.get(objectid);
+    const filament = extruderNum ? filamentMaterials[extruderNum - 1] || null : null;
+    const assemblyName = objectNameMap.get(objectid) || '';
+
+    // Resolve components
+    const components = assemblyMap.get(objectid);
+    if (components && components.length > 0) {
+      for (const comp of components) {
+        const combinedXform = multiplyTransforms(itemTransform, comp.transform);
+        // Part name: try partNameMap (sub-part by comp objectid), then assemblyName
+        const partName = partNameMap.get(comp.objectid) || assemblyName || '';
+        // Look up meshes in the external file
+        const lookupKey = `${comp.path}::${comp.objectid}`;
+        const meshArr = meshIndex.get(lookupKey) || [];
+        for (const m of meshArr) {
+          const colorStr = m.color || extruderColor;
+          addMeshToPlate(m, combinedXform, colorStr, plateId, partName, filament);
+        }
+      }
+    } else {
+      // Direct meshes on this object (no components)
+      const partName = assemblyName;
+      const lookupKey = `/${mainModelFile}::${objectid}`;
+      const meshArr = meshIndex.get(lookupKey) || [];
+      for (const m of meshArr) {
+        const colorStr = m.color || extruderColor;
+        addMeshToPlate(m, itemTransform, colorStr, plateId, partName, filament);
+      }
+    }
+  });
+
+  function addMeshToPlate(meshData, transform, colorStr, plateId, partName, filament) {
+    const geometry = createGeometryFromMesh(meshData);
+    if (transform) geometry.applyMatrix4(transform);
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    const color = colorStr ? parseColor(colorStr) : new THREE.Color(0xf59e0b);
+    const material = new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.originalColor = color.clone();
+    if (partName) mesh.name = partName;
+    if (filament) mesh.userData.filament = filament;
+    if (!plateGroups.has(plateId)) plateGroups.set(plateId, new THREE.Group());
+    plateGroups.get(plateId).add(mesh);
+  }
+
+  // Fallback: if main model resolution produced nothing, try each file's own build items
+  if (plateGroups.size === 0) {
+    for (const modelFile of modelFiles) {
+      if (modelFile === mainModelFile) continue;
+      const xml = new TextDecoder().decode(unzipped[modelFile]);
+      const meshes = parseModelXML(xml, globalColorMap);
+      for (const meshData of meshes) {
+        const extruderColor = objectColorMap.get(meshData.parentObjId) || null;
+        const colorStr = meshData.color || extruderColor;
+        const fallbackName = objectNameMap.get(meshData.parentObjId) || '';
+        addMeshToPlate(meshData, meshData.transform, colorStr, meshData.plateId || 0, fallbackName);
+      }
     }
   }
 
@@ -448,22 +732,28 @@ async function parseBambu3MF(buffer) {
 
   if (plateGroups.size === 0) throw new Error('No geometry found in 3MF file');
   const sortedPlates = [...plateGroups.entries()].sort((a, b) => a[0] - b[0]);
-  for (const [id, pg] of sortedPlates) group.add(pg);
+  for (const [id, pg] of sortedPlates) {
+    // Set plate group name from Bambu plate name, fallback to "Plate N"
+    pg.name = plateNameMap.get(id) || `Plate ${id}`;
+    group.add(pg);
+  }
   return group;
 }
 
-function parseModelXML(xml) {
+function parseModelXML(xml, externalColorMap) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, 'application/xml');
-  const colorMap = new Map();
 
-  // 1. Build color map from <basematerials> / <base displaycolor="...">
+  // Start with external (global) color map if provided, then add any local ones
+  const colorMap = new Map(externalColorMap || []);
   doc.querySelectorAll('*').forEach(el => {
     if (el.localName === 'base' && el.getAttribute('displaycolor')) {
       const parent = el.parentElement;
       const parentId = parent?.getAttribute('id');
       const idx = Array.from(parent?.children || []).indexOf(el);
-      colorMap.set(`${parentId}_${idx}`, el.getAttribute('displaycolor'));
+      if (parentId !== undefined && parentId !== null) {
+        colorMap.set(`${parentId}_${idx}`, el.getAttribute('displaycolor'));
+      }
     }
   });
 
@@ -510,6 +800,19 @@ function parseModelXML(xml) {
     }
   });
 
+  // Also build object-level color map (from pid/pindex on <object> elements)
+  const objectColorMap = new Map();
+  doc.querySelectorAll('*').forEach(el => {
+    if (el.localName === 'object') {
+      const oid = el.getAttribute('id');
+      const pid = el.getAttribute('pid'), pindex = el.getAttribute('pindex');
+      if (oid && pid && pindex != null) {
+        const c = colorMap.get(`${pid}_${pindex}`);
+        if (c) objectColorMap.set(oid, c);
+      }
+    }
+  });
+
   const results = [];
   doc.querySelectorAll('*').forEach(el => {
     if (el.localName !== 'item') return;
@@ -519,21 +822,29 @@ function parseModelXML(xml) {
     const plateMatch = partnumber.match(/(\d+)/);
     const plateId = plateMatch ? parseInt(plateMatch[1]) : 0;
 
+    // Item-level color (pid/pindex on the <item> itself)
+    const itemPid = el.getAttribute('pid'), itemPindex = el.getAttribute('pindex');
+    const itemColor = (itemPid && itemPindex != null) ? colorMap.get(`${itemPid}_${itemPindex}`) : null;
+
     // Resolve: if the object has components, expand them; otherwise use its meshes directly
     const components = componentMap.get(objectid);
     if (components && components.length > 0) {
       for (const comp of components) {
         const meshes = objectMeshes.get(comp.objectid) || [];
-        // Combine item transform with component transform
         const combinedXform = multiplyTransforms(transform, comp.transform);
+        const compObjColor = objectColorMap.get(comp.objectid);
+        const parentObjColor = objectColorMap.get(objectid);
         for (const m of meshes) {
-          results.push({ ...m, plateId, transform: combinedXform });
+          const color = m.color || compObjColor || parentObjColor || itemColor || null;
+          results.push({ ...m, color, plateId, transform: combinedXform });
         }
       }
     } else {
       const meshes = objectMeshes.get(objectid) || [];
+      const objColor = objectColorMap.get(objectid);
       for (const m of meshes) {
-        results.push({ ...m, plateId, transform });
+        const color = m.color || objColor || itemColor || null;
+        results.push({ ...m, color, plateId, transform });
       }
     }
   });
@@ -631,6 +942,12 @@ function processModel(object, fileName) {
 
   modelGroup = new THREE.Group();
   plates = [];
+
+  // Detect filament data from 3MF and update UI accordingly
+  hasFilamentData = !!(object.userData?.filamentMaterials?.length);
+  const materialRow = materialSelect.closest('.flex.items-center');
+  if (materialRow) materialRow.style.display = hasFilamentData ? 'none' : '';
+
   const hasSubGroups = object.children.some(c => c.isGroup && c.children.length > 0);
 
   if (hasSubGroups) {
@@ -1022,18 +1339,64 @@ function shelfPack(items, bedW, bedD, gap) {
   return { placed, overflow };
 }
 
-// Run auto-layout: lay flat + pack all meshes across plates
+// Run auto-layout: lay flat + pack meshes onto bed
+// If plates already have Bambu names (from model_settings.config), layout within each plate.
+// Otherwise, pool all meshes and re-bin across new plates.
 function autoLayoutPlates() {
   // Lay flat all meshes before computing footprints
   plates.forEach(p => layFlatGroup(p.group));
+
+  // Check if we have named plates from Bambu (not generic "Plate N")
+  const hasBambuPlates = plates.length > 1 || (plates.length === 1 && plates[0].name && !plates[0].name.match(/^Plate \d+$/));
+
+  if (hasBambuPlates && plates.length > 0) {
+    // Layout within each existing plate separately
+    const gap = 8;
+    for (const plate of plates) {
+      const items = [];
+      const toRemove = [];
+      plate.group.children.forEach(c => {
+        if (!c.isMesh || !c.geometry) return;
+        c.updateMatrixWorld(true);
+        if (!c.geometry.boundingBox) c.geometry.computeBoundingBox();
+        const box = c.geometry.boundingBox.clone().applyMatrix4(c.matrixWorld);
+        const sz = new THREE.Vector3(); box.getSize(sz);
+        const ctr = new THREE.Vector3(); box.getCenter(ctr);
+        items.push({ mesh: c, w: sz.x, d: sz.z, h: sz.y, cx: ctr.x, cz: ctr.z, cy: ctr.y, box });
+        toRemove.push(c);
+      });
+      toRemove.forEach(m => plate.group.remove(m));
+      items.sort((a, b) => (b.w * b.d) - (a.w * a.d));
+
+      const { placed, overflow } = shelfPack(items, BED_W, BED_D, gap);
+      for (const { item, x, z } of placed) {
+        const targetX = -BED_W / 2 + BED_PAD + x + item.w / 2;
+        const targetZ = -BED_D / 2 + BED_PAD + z + item.d / 2;
+        item.mesh.position.x += targetX - item.cx;
+        item.mesh.position.z += targetZ - item.cz;
+        item.mesh.position.y += -(item.cy - item.h / 2);
+        plate.group.add(item.mesh);
+      }
+      // Overflow items still go on same plate (just won't fit neatly)
+      for (const item of overflow) {
+        item.mesh.position.x += -item.cx;
+        item.mesh.position.z += -item.cz;
+        item.mesh.position.y += -(item.cy - item.h / 2);
+        plate.group.add(item.mesh);
+      }
+    }
+    console.log(`Auto-layout: ${plates.length} Bambu plate(s) laid out individually`);
+    return;
+  }
+
+  // Fallback: pool all meshes and re-bin across new plates
   const allItems = gatherMeshItems();
   if (allItems.length === 0) return;
 
-  // Clear existing plates from modelGroup
   plates.forEach(p => modelGroup.remove(p.group));
   plates = [];
 
-  const gap = 8; // mm between objects
+  const gap = 8;
   let remaining = allItems;
   let plateNum = 1;
 
@@ -1041,14 +1404,11 @@ function autoLayoutPlates() {
     const { placed, overflow } = shelfPack(remaining, BED_W, BED_D, gap);
 
     if (placed.length === 0 && overflow.length > 0) {
-      // Items too large for bed — force-place them one per plate
       const big = overflow.shift();
       const pg = new THREE.Group();
       pg.visible = false;
-      // Center the oversized part on the bed
       big.mesh.position.x += -big.cx;
       big.mesh.position.z += -big.cz;
-      // Ground it: bottom of mesh sits at Y=0
       big.mesh.position.y += -(big.cy - big.h / 2);
       pg.add(big.mesh);
       plates.push({ group: pg, name: 'Plate ' + plateNum, colors: [] });
@@ -1062,12 +1422,10 @@ function autoLayoutPlates() {
     pg.visible = false;
 
     for (const { item, x, z } of placed) {
-      // Target position: bed origin is at center, so offset from -halfBed + pad
       const targetX = -BED_W / 2 + BED_PAD + x + item.w / 2;
       const targetZ = -BED_D / 2 + BED_PAD + z + item.d / 2;
       item.mesh.position.x += targetX - item.cx;
       item.mesh.position.z += targetZ - item.cz;
-      // Ground it at Y=0
       item.mesh.position.y += -(item.cy - item.h / 2);
       pg.add(item.mesh);
     }
@@ -1078,7 +1436,6 @@ function autoLayoutPlates() {
     remaining = overflow;
   }
 
-  // Clean up plate names if only one
   if (plates.length === 1) plates[0].name = 'All Objects';
   console.log(`Auto-layout: ${allItems.length} objects across ${plates.length} plate(s)`);
 }
@@ -1124,7 +1481,7 @@ function computeMeshVolume(mesh) {
 // Estimate weight using wall thickness, infill %, and material density
 // Uses a simplified shell model: walls + top/bottom solid layers are 100% fill,
 // interior gets the chosen infill percentage
-function estimateWeight(volumeMm3) {
+function estimateWeight(volumeMm3, overrideDensity) {
   const volCm3 = volumeMm3 / 1000; // mm³ → cm³
   // Wall shell thickness
   const wallThickness = wallCount * nozzleDia; // mm
@@ -1142,8 +1499,8 @@ function estimateWeight(volumeMm3) {
   const shellFraction = shellVol / (side * side * side);
   const infillFraction = (1 - shellFraction) * (infillPercent / 100);
   const effectiveFill = shellFraction + infillFraction;
-  const mat = MATERIALS[selectedMaterialIdx];
-  return volCm3 * effectiveFill * mat.density;
+  const density = overrideDensity || MATERIALS[selectedMaterialIdx].density;
+  return volCm3 * effectiveFill * density;
 }
 
 // ─── Object selection ───
@@ -1267,9 +1624,12 @@ function updateObjectsPanel(plate) {
     row.dataset.idx = m.userData.objIndex;
     const hex = m.material?.color ? '#' + m.material.color.getHexString() : '#f59e0b';
     const name = m.name || `Object ${i + 1}`;
+    const fil = m.userData.filament;
+    const matLabel = fil ? `<span class="text-[10px] font-mono text-zinc-500 shrink-0" title="${fil.name || ''}">${fil.type}</span>` : '';
     row.innerHTML = `
       <input type="color" value="${hex}" class="obj-color w-5 h-5 rounded border border-zinc-600 cursor-pointer bg-transparent p-0 shrink-0" title="Change color" style="appearance:none;-webkit-appearance:none;">
       <span class="text-xs font-mono text-zinc-300 truncate flex-1" title="${name}">${name}</span>
+      ${matLabel}
       <span class="text-[10px] font-mono text-zinc-600 shrink-0 obj-weight"></span>
     `;
     // Color picker
@@ -1296,23 +1656,47 @@ function updateWeightInfo(meshes) {
     return;
   }
   let totalVol = 0;
+  let totalW = 0;
   const rows = document.querySelectorAll('.obj-item');
 
   meshes.forEach((m, i) => {
     if (!m.userData.volume) m.userData.volume = computeMeshVolume(m);
     const vol = m.userData.volume;
     totalVol += vol;
-    const w = estimateWeight(vol);
+    // Use per-mesh filament density from 3MF if available, otherwise use global material selector
+    const filDensity = m.userData.filament?.density || null;
+    const w = estimateWeight(vol, filDensity);
+    totalW += w;
     const weightEl = rows[i]?.querySelector('.obj-weight');
     if (weightEl) weightEl.textContent = w >= 1 ? w.toFixed(1) + 'g' : (w * 1000).toFixed(0) + 'mg';
   });
 
-  const totalW = estimateWeight(totalVol);
-  const mat = MATERIALS[selectedMaterialIdx];
   const totalVolCm3 = totalVol / 1000;
+  const weightStr = totalW >= 1 ? totalW.toFixed(1) + ' g' : (totalW * 1000).toFixed(0) + ' mg';
+
+  // Build per-filament weight breakdown if 3MF provides filament data
+  let filamentBreakdown = '';
+  if (hasFilamentData) {
+    const byType = new Map(); // type → { weight, density }
+    meshes.forEach(m => {
+      const fil = m.userData.filament;
+      if (!fil) return;
+      const vol = m.userData.volume || 0;
+      const w = estimateWeight(vol, fil.density);
+      const key = fil.type;
+      if (!byType.has(key)) byType.set(key, { weight: 0, density: fil.density, name: fil.name });
+      byType.get(key).weight += w;
+    });
+    for (const [type, info] of byType) {
+      const wStr = info.weight >= 1 ? info.weight.toFixed(1) + 'g' : (info.weight * 1000).toFixed(0) + 'mg';
+      filamentBreakdown += `<div class="flex justify-between" title="${info.name}"><span class="text-zinc-500">${type}:</span><span class="text-zinc-300">${wStr} (${info.density} g/cm³)</span></div>`;
+    }
+  }
+
   weightInfo.innerHTML = `
     <div class="flex justify-between"><span class="text-zinc-500">Volume:</span><span class="text-zinc-300">${totalVolCm3.toFixed(1)} cm³</span></div>
-    <div class="flex justify-between"><span class="text-zinc-500">Weight:</span><span class="text-amber-400 font-semibold">${totalW >= 1 ? totalW.toFixed(1) + ' g' : (totalW * 1000).toFixed(0) + ' mg'}</span></div>
+    <div class="flex justify-between"><span class="text-zinc-500">Weight:</span><span class="text-amber-400 font-semibold">${weightStr}</span></div>
+    ${filamentBreakdown}
     <div class="flex justify-between"><span class="text-zinc-500">Infill:</span><span class="text-zinc-300">${infillPercent}%</span></div>
     <div class="flex justify-between"><span class="text-zinc-500">Walls:</span><span class="text-zinc-300">${wallCount}× ${nozzleDia}mm</span></div>
   `;
