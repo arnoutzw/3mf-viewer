@@ -156,7 +156,7 @@
 </div>
 
 <!-- ── FPS Counter ── -->
-<div id="fps-counter" class="fixed bottom-5 left-5 text-[11px] font-mono text-zinc-600 z-[100] pointer-events-none">0 FPS</div>
+<div id="fps-counter" class="fixed bottom-5 left-5 text-sm font-mono font-bold text-zinc-300 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-md z-[100] pointer-events-none">0 FPS</div>
 
 <!-- ── Model Info ── -->
 <div id="model-info" class="fixed bottom-[76px] right-[260px] bg-zinc-900 border border-zinc-700 rounded-lg p-3 z-[100] hidden text-xs text-zinc-500 font-mono leading-relaxed"></div>
@@ -471,7 +471,7 @@ function initScene() {
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
   camera.position.set(200, 200, 200);
 
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
@@ -767,7 +767,14 @@ function applyGraphicsQuality(quality) {
 }
 
 let fpsFrames = 0, fpsLastTime = performance.now();
+let autoQualityEnabled = true;       // auto-scale quality based on FPS
+let lowFpsStreak = 0;                // consecutive seconds below low threshold
+let highFpsStreak = 0;               // consecutive seconds above high threshold
+const LOW_FPS_THRESHOLD = 30;
+const HIGH_FPS_THRESHOLD = 59;
+const STREAK_REQUIRED = 3;           // must sustain for 3s before switching
 const fpsEl = document.getElementById('fps-counter');
+
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
@@ -776,9 +783,47 @@ function animate() {
   fpsFrames++;
   const now = performance.now();
   if (now - fpsLastTime >= 1000) {
-    fpsEl.textContent = fpsFrames + ' FPS';
+    const fps = fpsFrames;
+    const qLabel = graphicsQuality === 'ultra' ? 'U' : graphicsQuality === 'high' ? 'H' : 'P';
+    fpsEl.textContent = fps + ' FPS · ' + qLabel;
     fpsFrames = 0;
     fpsLastTime = now;
+
+    // Auto-scale: downgrade if FPS < 30 for 3s, upgrade if FPS >= 59 for 3s
+    if (autoQualityEnabled && plates.length > 0) {
+      // Downgrade check
+      if (fps < LOW_FPS_THRESHOLD) {
+        lowFpsStreak++;
+        highFpsStreak = 0;
+        if (lowFpsStreak >= STREAK_REQUIRED) {
+          lowFpsStreak = 0;
+          if (graphicsQuality === 'ultra') {
+            applyGraphicsQuality('high');
+            console.log(`Auto quality: Ultra → High (FPS was ${fps})`);
+          } else if (graphicsQuality === 'high') {
+            applyGraphicsQuality('performance');
+            console.log(`Auto quality: High → Performance (FPS was ${fps})`);
+          }
+        }
+      // Upgrade check
+      } else if (fps >= HIGH_FPS_THRESHOLD) {
+        highFpsStreak++;
+        lowFpsStreak = 0;
+        if (highFpsStreak >= STREAK_REQUIRED) {
+          highFpsStreak = 0;
+          if (graphicsQuality === 'performance') {
+            applyGraphicsQuality('high');
+            console.log(`Auto quality: Performance → High (FPS was ${fps})`);
+          } else if (graphicsQuality === 'high') {
+            applyGraphicsQuality('ultra');
+            console.log(`Auto quality: High → Ultra (FPS was ${fps})`);
+          }
+        }
+      } else {
+        lowFpsStreak = 0;
+        highFpsStreak = 0;
+      }
+    }
   }
 }
 
@@ -2459,6 +2504,9 @@ document.getElementById('btn-quality').onclick = function() {
   const tiers = ['ultra', 'high', 'performance'];
   const idx = tiers.indexOf(graphicsQuality);
   const next = tiers[(idx + 1) % tiers.length];
+  // Manual pick: disable auto-downgrade (unless going back to ultra)
+  autoQualityEnabled = (next === 'ultra');
+  lowFpsStreak = 0;
   applyGraphicsQuality(next);
 };
 
