@@ -1557,6 +1557,7 @@ function selectMesh(mesh) {
 // ─── Plate / Camera ───
 let allPlatesMode = false;
 const savedPlatePositions = new Map(); // plate index → original group position
+let clonedBeds = []; // bed clones for all-plates view
 
 function showPlate(index) {
   // Restore original positions if coming out of all-plates mode
@@ -1565,7 +1566,10 @@ function showPlate(index) {
       const saved = savedPlatePositions.get(i);
       if (saved) p.group.position.copy(saved);
     });
-    if (bedGroup) { bedGroup.visible = bedVisible; bedGroup.position.x = 0; }
+    // Remove cloned beds
+    clonedBeds.forEach(b => scene.remove(b));
+    clonedBeds = [];
+    if (bedGroup) { bedGroup.visible = bedVisible; }
     allPlatesMode = false;
   }
   plates.forEach((p, i) => { p.group.visible = (i === index); });
@@ -1584,7 +1588,7 @@ function showAllPlates() {
   selectMesh(null);
 
   // Save original positions and lay out in a grid
-  const gap = 40;
+  const gap = 60;
   const cols = Math.ceil(Math.sqrt(plates.length));
   const rows = Math.ceil(plates.length / cols);
   const cellW = BED_W + gap;
@@ -1592,16 +1596,31 @@ function showAllPlates() {
   const startX = -(cols * cellW - gap) / 2 + BED_W / 2;
   const startZ = -(rows * cellD - gap) / 2 + BED_D / 2;
 
+  // Remove any leftover cloned beds
+  clonedBeds.forEach(b => scene.remove(b));
+  clonedBeds = [];
+
   plates.forEach((p, i) => {
     savedPlatePositions.set(i, p.group.position.clone());
     p.group.visible = true;
     const col = i % cols;
     const row = Math.floor(i / cols);
-    p.group.position.x = startX + col * cellW;
-    p.group.position.z = startZ + row * cellD;
+    const px = startX + col * cellW;
+    const pz = startZ + row * cellD;
+    p.group.position.x = px;
+    p.group.position.z = pz;
+
+    // Clone bed at this plate's position
+    if (bedGroup) {
+      const bedClone = bedGroup.clone();
+      bedClone.position.set(px, 0, pz);
+      bedClone.visible = true;
+      scene.add(bedClone);
+      clonedBeds.push(bedClone);
+    }
   });
 
-  // Hide bed in all-plates mode (would need cloning per plate)
+  // Hide original bed
   if (bedGroup) bedGroup.visible = false;
 
   activePlateIndex = -1; // -1 = all plates
