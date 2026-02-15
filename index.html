@@ -275,7 +275,8 @@
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
+    "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js",
+    "earcut": "https://cdn.jsdelivr.net/npm/earcut@3.0.2/+esm"
   }
 }
 </script>
@@ -293,6 +294,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import earcut from 'earcut';
 
 // ─── State ───
 const BED_W = 256, BED_D = 256; // Bambu X1C build plate (mm)
@@ -1287,7 +1289,7 @@ async function loadDXF(file) {
     }
 
     // ── Phase 1: Convert all entities → THREE.Shape (fast, no heavy geometry) ──
-    showLoading('Building shapes...', 5);
+    showLoading('Building shapes 0 / ' + totalEntities + '...', 2);
     await yieldToUI();
     // { shape, type:'extrude', bbox, isCircle, layer } or { positions, type:'face' }
     const shapes = [];
@@ -1429,9 +1431,19 @@ async function loadDXF(file) {
         shapes.push({ shape, type: 'extrude', rawPts2D, bbox: { x0: bx0, x1: bx1, y0: by0, y1: by1, area },
                        isCircle: !!shape._circleInfo, layer: entity.layer || '' });
       }
+      // Time-based yield for Phase 1 progress
+      const nowP1 = performance.now();
+      if (nowP1 - lastYield > 16) {
+        const pct = 2 + Math.round((ei / totalEntities) * 8);
+        showLoading('Building shapes ' + (ei + 1) + ' / ' + totalEntities + '...', pct);
+        await yieldToUI();
+        lastYield = performance.now();
+      }
     }
 
     // ── Phase 1b: Detect holes (small circles fully inside larger shapes) ──
+    showLoading('Detecting holes...', 11);
+    await yieldToUI();
     const extrudeShapes = shapes.filter(s => s.type === 'extrude');
     const holeIndices = new Set();
     // For each circle, check containment in a larger non-circle shape
@@ -1462,103 +1474,144 @@ async function loadDXF(file) {
     if (shapes.length === 0) throw new Error('No supported entities found in DXF');
 
     // ── Manual extrusion: bypasses THREE.ExtrudeGeometry for robust complex polygon support ──
-    // Uses THREE.Earcut directly on raw coordinate arrays for reliable triangulation
-    function manualExtrude(outerPts, depth, holeCircles) {
+    // Optimized: direct earcut (no Vector2), pre-allocated typed arrays, inlined side quads
+    // Async with sub-step progress for complex shapes (>100 verts)
+    async function manualExtrude(outerPts, depth, holeCircles, label) {
       const outerLen = outerPts.length;
       if (outerLen < 3) return null;
+      const isComplex = outerLen > 100;
 
-      // Build Vector2 contour for THREE.ShapeUtils
-      const contour = outerPts.map(p => new THREE.Vector2(p.x, p.y));
+      // ── Sub-step 1: Build flat coordinate array for earcut (no Vector2 objects) ──
+      if (isComplex) { showLoading(label + ' contours...'); await yieldToUI(); }
 
-      // Build hole contours (circles → polygon approximation)
-      const holeContours = []; // Vector2[][]
-      const holeContoursRaw = []; // {x,y}[][] for side walls
+      // Flat coords: [x0,y0, x1,y1, ...] for outer + all holes
+      let totalPts = outerLen;
+      const holeIndices = [];  // earcut hole start indices
+      const holeLens = [];     // length of each hole contour
       if (holeCircles && holeCircles.length) {
-        for (const hc of holeCircles) {
-          const hVec = [], hRaw = [];
-          const hSegs = 48;
-          for (let i = 0; i < hSegs; i++) {
-            const a = (i / hSegs) * Math.PI * 2;
-            const hx = hc.cx + hc.r * Math.cos(a);
-            const hy = hc.cy + hc.r * Math.sin(a);
-            hVec.push(new THREE.Vector2(hx, hy));
-            hRaw.push({ x: hx, y: hy });
-          }
-          holeContours.push(hVec);
-          holeContoursRaw.push(hRaw);
+        const hSegs = 48;
+        for (let h = 0; h < holeCircles.length; h++) {
+          holeIndices.push(totalPts);
+          holeLens.push(hSegs);
+          totalPts += hSegs;
         }
       }
 
-      // Triangulate using THREE.ShapeUtils (uses earcut internally but with direct Vector2 input)
-      const faces = THREE.ShapeUtils.triangulateShape(contour, holeContours);
-      if (faces.length === 0) return null;
-
-      // Build combined vertex list: outer contour + all hole contours
-      const allVerts2D = [...outerPts];
-      for (const hRaw of holeContoursRaw) {
-        for (const p of hRaw) allVerts2D.push(p);
-      }
-      const totalPts2D = allVerts2D.length;
-
-      // Build 3D positions: bottom (y=0) + top (y=depth), DXF x→X, DXF y→-Z
-      const pos = new Float32Array(totalPts2D * 2 * 3);
-      for (let i = 0; i < totalPts2D; i++) {
-        const x = allVerts2D[i].x, dxfY = allVerts2D[i].y;
-        pos[i * 3]     = x;
-        pos[i * 3 + 1] = 0;
-        pos[i * 3 + 2] = -dxfY;
-        const ti = (totalPts2D + i) * 3;
-        pos[ti]     = x;
-        pos[ti + 1] = depth;
-        pos[ti + 2] = -dxfY;
-      }
-
-      // Count side edges
-      let totalEdges = outerLen;
-      for (const hRaw of holeContoursRaw) totalEdges += hRaw.length;
-
-      // Build index buffer
-      const idx = new Uint32Array(faces.length * 3 * 2 + totalEdges * 6);
-      let ii = 0;
-
-      // Bottom face (flip winding for downward normal)
-      for (const f of faces) {
-        idx[ii++] = f[0]; idx[ii++] = f[2]; idx[ii++] = f[1];
-      }
-      // Top face (offset by totalPts2D)
-      for (const f of faces) {
-        idx[ii++] = f[0] + totalPts2D; idx[ii++] = f[1] + totalPts2D; idx[ii++] = f[2] + totalPts2D;
-      }
-
-      // Side walls — outer contour
+      const flatCoords = new Float64Array(totalPts * 2);
+      // Write outer contour
       for (let i = 0; i < outerLen; i++) {
-        const a = i, b = (i + 1) % outerLen;
-        const at = a + totalPts2D, bt = b + totalPts2D;
-        idx[ii++] = a;  idx[ii++] = b;  idx[ii++] = bt;
-        idx[ii++] = a;  idx[ii++] = bt; idx[ii++] = at;
+        flatCoords[i * 2] = outerPts[i].x;
+        flatCoords[i * 2 + 1] = outerPts[i].y;
+      }
+      // Write hole contours (circles → polygon)
+      let wOff = outerLen * 2;
+      if (holeCircles && holeCircles.length) {
+        const hSegs = 48;
+        const step = (Math.PI * 2) / hSegs;
+        for (let h = 0; h < holeCircles.length; h++) {
+          const hc = holeCircles[h];
+          for (let i = 0; i < hSegs; i++) {
+            const a = i * step;
+            flatCoords[wOff++] = hc.cx + hc.r * Math.cos(a);
+            flatCoords[wOff++] = hc.cy + hc.r * Math.sin(a);
+          }
+        }
       }
 
-      // Side walls — holes (reversed winding)
-      let hStart = outerLen;
-      for (const hRaw of holeContoursRaw) {
-        for (let i = 0; i < hRaw.length; i++) {
-          const a = hStart + i, b = hStart + (i + 1) % hRaw.length;
-          const at = a + totalPts2D, bt = b + totalPts2D;
-          idx[ii++] = a;  idx[ii++] = bt; idx[ii++] = b;
-          idx[ii++] = a;  idx[ii++] = at; idx[ii++] = bt;
+      // ── Sub-step 2: Triangulate with earcut directly (skip THREE.ShapeUtils overhead) ──
+      if (isComplex) { showLoading(label + ' triangulating...'); await yieldToUI(); }
+
+      const triIndices = earcut(flatCoords, holeIndices.length ? holeIndices : null, 2);
+      if (triIndices.length === 0) return null;
+      const numTris = triIndices.length / 3;
+
+      // ── Pre-calculate sizes and pre-allocate ALL typed arrays ──
+      const N = totalPts;
+      let totalSideEdges = outerLen;
+      for (let h = 0; h < holeLens.length; h++) totalSideEdges += holeLens[h];
+      const sideQuads = totalSideEdges;
+      const totalVerts = N * 2 + sideQuads * 4;           // bottom + top + sides
+      const totalIndices = numTris * 6 + sideQuads * 6;   // 2 faces × tris + side quads × 2 tris
+      const pos = new Float32Array(totalVerts * 3);
+      const nrm = new Float32Array(totalVerts * 3);
+      const idx = new Uint32Array(totalIndices);
+
+      // ── Sub-step 3: Bottom + Top faces in single pass (halves iteration) ──
+      if (isComplex) { showLoading(label + ' faces...'); await yieldToUI(); }
+
+      const topBase = N;
+      let vi3 = 0;     // position/normal write offset (×3)
+      let tvi3 = N * 3; // top face position/normal write offset (×3)
+
+      for (let i = 0; i < N; i++) {
+        const x = flatCoords[i * 2];
+        const z = -flatCoords[i * 2 + 1];
+        // Bottom vertex (y=0, normal down)
+        pos[vi3] = x; pos[vi3 + 1] = 0; pos[vi3 + 2] = z;
+        nrm[vi3] = 0; nrm[vi3 + 1] = -1; nrm[vi3 + 2] = 0;
+        vi3 += 3;
+        // Top vertex (y=depth, normal up)
+        pos[tvi3] = x; pos[tvi3 + 1] = depth; pos[tvi3 + 2] = z;
+        nrm[tvi3] = 0; nrm[tvi3 + 1] = 1; nrm[tvi3 + 2] = 0;
+        tvi3 += 3;
+      }
+
+      // Write face indices — bottom (CW) and top (CCW)
+      let ii = 0;
+      for (let t = 0; t < triIndices.length; t += 3) {
+        const a = triIndices[t], b = triIndices[t + 1], c = triIndices[t + 2];
+        idx[ii++] = a;          idx[ii++] = c;          idx[ii++] = b;            // bottom CW
+        idx[ii++] = topBase + a; idx[ii++] = topBase + b; idx[ii++] = topBase + c; // top CCW
+      }
+
+      // ── Sub-step 4: Side walls — inlined (no function call per edge) ──
+      if (isComplex) { showLoading(label + ' side walls...'); await yieldToUI(); }
+
+      let vi = N * 2; // vertex write index (after bottom + top)
+      // Helper: write one side quad inline
+      function writeSideEdge(i0, i1) {
+        const ax = flatCoords[i0 * 2], ay = flatCoords[i0 * 2 + 1];
+        const bx = flatCoords[i1 * 2], by = flatCoords[i1 * 2 + 1];
+        // Outward normal in XZ plane (edge rotated 90° CW after DXF→Three.js mapping)
+        const ex = bx - ax, ez = -(by - ay);
+        let nx = -ez, nz = ex;
+        const len = Math.sqrt(nx * nx + nz * nz) || 1;
+        nx /= len; nz /= len;
+        const azm = -ay, bzm = -by;
+        const base = vi;
+        let o = vi * 3;
+        pos[o]=ax; pos[o+1]=0;     pos[o+2]=azm; nrm[o]=nx; nrm[o+1]=0; nrm[o+2]=nz; o+=3;
+        pos[o]=bx; pos[o+1]=0;     pos[o+2]=bzm; nrm[o]=nx; nrm[o+1]=0; nrm[o+2]=nz; o+=3;
+        pos[o]=bx; pos[o+1]=depth; pos[o+2]=bzm; nrm[o]=nx; nrm[o+1]=0; nrm[o+2]=nz; o+=3;
+        pos[o]=ax; pos[o+1]=depth; pos[o+2]=azm; nrm[o]=nx; nrm[o+1]=0; nrm[o+2]=nz;
+        vi += 4;
+        idx[ii++]=base; idx[ii++]=base+1; idx[ii++]=base+2;
+        idx[ii++]=base; idx[ii++]=base+2; idx[ii++]=base+3;
+      }
+
+      // Outer contour side walls
+      for (let i = 0; i < outerLen; i++) {
+        writeSideEdge(i, (i + 1) % outerLen);
+      }
+      // Hole side walls (reversed winding for inward normals)
+      let hOff = outerLen;
+      for (let h = 0; h < holeLens.length; h++) {
+        const hLen = holeLens[h];
+        for (let i = 0; i < hLen; i++) {
+          writeSideEdge(hOff + (i + 1) % hLen, hOff + i);
         }
-        hStart += hRaw.length;
+        hOff += hLen;
       }
 
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      geo.setIndex(new THREE.BufferAttribute(idx.subarray(0, ii), 1));
-      geo.computeVertexNormals();
+      geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+      geo.setIndex(new THREE.BufferAttribute(idx, 1));
       return geo;
     }
 
     // ── Phase 2: Build geometry for all shapes ──
-    showLoading('Extruding 0 / ' + shapes.length + '...', 10);
+    showLoading('Extruding 0 / ' + shapes.length + '...', 14);
     await yieldToUI();
     const allGeos = [];
     lastYield = performance.now();
@@ -1566,35 +1619,38 @@ async function loadDXF(file) {
     for (let i = 0; i < shapes.length; i++) {
       const item = shapes[i];
       let geo = null;
+      const pct = 14 + Math.round((i / shapes.length) * 68);
+      const tag = 'Extruding ' + (i + 1) + ' / ' + shapes.length;
 
       if (item.type === 'face') {
         geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(item.positions, 3));
         geo.computeVertexNormals();
       } else if (item.type === 'extrude') {
-        // Use stored raw 2D points for manual extrusion
-        geo = manualExtrude(item.rawPts2D, thickness, item.holeCircles || null);
+        showLoading(tag + '...', pct);
+        // Use stored raw 2D points for manual extrusion with sub-step progress
+        geo = await manualExtrude(item.rawPts2D, thickness, item.holeCircles || null, tag);
 
         // Fallback to THREE.ExtrudeGeometry if manual fails
         if (!geo) {
+          showLoading(tag + ' fallback...', pct);
+          await yieldToUI();
           geo = new THREE.ExtrudeGeometry(item.shape, extrudeSettings);
           geo.applyMatrix4(rotMatrix);
         }
       }
 
       if (geo) allGeos.push(geo);
-      // Time-based yield: repaint every ~16ms for smooth progress bar
+      // Time-based yield for simple shapes (complex ones yield inside manualExtrude)
       const now = performance.now();
       if (now - lastYield > 16) {
-        const pct = 10 + Math.round((i / shapes.length) * 75);
-        showLoading('Extruding ' + (i + 1) + ' / ' + shapes.length + '...', pct);
         await yieldToUI();
         lastYield = performance.now();
       }
     }
 
     // ── Phase 3: Manual buffer merge (faster than BufferGeometryUtils) ──
-    showLoading('Merging geometry...', 88);
+    showLoading('Merging 0 / ' + allGeos.length + '...', 84);
     await yieldToUI();
 
     let totalVerts = 0, totalIdx = 0;
@@ -1606,6 +1662,7 @@ async function loadDXF(file) {
     const mergedNrm = new Float32Array(totalVerts * 3);
     const mergedIdx = new Uint32Array(totalIdx);
     let vOff = 0, iOff = 0, idxBase = 0;
+    lastYield = performance.now();
 
     for (let i = 0; i < allGeos.length; i++) {
       const g = allGeos[i];
@@ -1625,16 +1682,24 @@ async function loadDXF(file) {
       idxBase += g.attributes.position.count;
       vOff += g.attributes.position.count;
       g.dispose(); // free source geometry immediately
+      // Time-based yield for Phase 3 progress
+      const nowP3 = performance.now();
+      if (nowP3 - lastYield > 16) {
+        const pct = 84 + Math.round((i / allGeos.length) * 10);
+        showLoading('Merging ' + (i + 1) + ' / ' + allGeos.length + '...', pct);
+        await yieldToUI();
+        lastYield = performance.now();
+      }
     }
 
     const mergedGeo = new THREE.BufferGeometry();
     mergedGeo.setAttribute('position', new THREE.BufferAttribute(mergedPos, 3));
     mergedGeo.setAttribute('normal', new THREE.BufferAttribute(mergedNrm, 3));
     mergedGeo.setIndex(new THREE.BufferAttribute(mergedIdx, 1));
-    mergedGeo.computeVertexNormals();
 
     showLoading('Finalizing...', 96);
     await yieldToUI();
+    mergedGeo.userData = { hasManualNormals: true };
     const mergedMesh = new THREE.Mesh(mergedGeo, createFDMMaterial(defaultColor));
     object.add(mergedMesh);
 
@@ -2650,7 +2715,7 @@ async function finalizeGeometry() {
     for (const c of plate.group.children) {
       if (c.isMesh && c.geometry) {
         const geo = c.geometry;
-        geo.computeVertexNormals();
+        if (!geo.userData?.hasManualNormals) geo.computeVertexNormals();
         geo.computeBoundingBox();
 
         // Generate UVs for FDM layer texture: V = world Y position
