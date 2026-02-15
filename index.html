@@ -88,6 +88,9 @@
 <div id="loading-overlay" class="fixed inset-0 bg-black/90 backdrop-blur-sm z-[2000] hidden items-center justify-center flex-col">
   <div class="spinner w-11 h-11 border-[3px] border-zinc-700 border-t-amber-500 rounded-full mb-4"></div>
   <div id="loading-text" class="text-sm text-zinc-500 font-mono">Loading model...</div>
+  <div class="w-48 h-1 bg-zinc-800 rounded-full mt-4 overflow-hidden">
+    <div id="loading-bar" class="h-full bg-amber-500 rounded-full transition-all duration-300 ease-out" style="width:0%"></div>
+  </div>
 </div>
 
 <!-- ── Canvas ── -->
@@ -99,10 +102,16 @@
     <svg class="w-4 h-4 text-amber-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 4.5v11L12 22l-9-4.5v-11z"/><path d="M12 22V12"/><path d="M3 6.5l9 5"/><path d="M21 6.5l-9 5"/></svg>
     <span id="model-name-text" class="text-sm font-mono text-zinc-100 truncate"></span>
   </div>
-  <button id="open-btn" class="pointer-events-auto model-name-hidden bg-zinc-900 border border-zinc-700 hover:border-amber-500/50 text-zinc-400 hover:text-amber-400 px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer">
-    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-    Open
-  </button>
+  <div class="pointer-events-auto flex items-center gap-2">
+    <button id="bambu-btn" class="model-name-hidden bg-zinc-900 border border-zinc-700 hover:border-green-500/50 text-zinc-400 hover:text-green-400 px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer" title="Open in Bambu Studio">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg>
+      Bambu Studio
+    </button>
+    <button id="open-btn" class="model-name-hidden bg-zinc-900 border border-zinc-700 hover:border-amber-500/50 text-zinc-400 hover:text-amber-400 px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Open
+    </button>
+  </div>
 </div>
 
 <!-- ── Plate Sidebar ── -->
@@ -240,6 +249,7 @@ const MATERIALS = [
 ];
 let selectedMaterialIdx = 0;
 let hasFilamentData = false; // true when 3MF provides per-object filament info
+let loadedFile = null; // store the loaded File for "Open in Bambu Studio"
 let infillPercent = 20;    // default 20% infill
 let wallCount = 3;         // number of perimeter walls
 let nozzleDia = 0.4;       // nozzle diameter mm
@@ -375,19 +385,21 @@ function onResize() {
 
 // ─── 3MF Loading (custom Bambu-aware parser) ───
 async function load3MF(file) {
-  showLoading('Reading ' + file.name + '...');
+  loadedFile = file;
+  showLoading('Reading ' + file.name + '...', 0);
   dropZone.classList.add('hidden');
 
   try {
     const arrayBuffer = await file.arrayBuffer();
-    showLoading('Parsing 3MF...');
+    showLoading('Parsing 3MF...', 5);
 
     let object;
+    const onProgress = (msg, pct) => showLoading(msg, pct);
     // Always try custom Bambu parser first — it handles Bambu-specific
     // displaycolor, partnumber plates, and component assemblies correctly.
     // Three's ThreeMFLoader silently drops these, defaulting all colors.
     try {
-      object = await parseBambu3MF(arrayBuffer);
+      object = await parseBambu3MF(arrayBuffer, onProgress);
     } catch (e) {
       console.warn('Bambu parser failed, trying ThreeMFLoader:', e.message);
       try {
@@ -399,6 +411,7 @@ async function load3MF(file) {
     }
 
     if (!object) throw new Error('Could not parse 3MF');
+    showLoading('Laying out plates...', 95);
     processModel(object, file.name);
   } catch (err) {
     console.error('Load error:', err);
@@ -425,7 +438,12 @@ function parseColor(colorStr) {
   }
 }
 
-async function parseBambu3MF(buffer) {
+async function parseBambu3MF(buffer, onProgress) {
+  const progress = async (msg, pct) => {
+    if (onProgress) onProgress(msg, pct);
+    await new Promise(r => setTimeout(r, 0)); // yield to browser for repaint
+  };
+  await progress('Decompressing ZIP...', 10);
   const fflate = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
   const data = new Uint8Array(buffer);
   const unzipped = fflate.unzipSync(data);
@@ -442,6 +460,7 @@ async function parseBambu3MF(buffer) {
   //   2. model_settings.config (XML) → <object id="N"><metadata key="extruder" value="M"/>
   // We parse both to build objectId → color mapping.
 
+  await progress('Reading filament config...', 20);
   // Step A: Extract filament colors and material info from project_settings.config
   let filamentColors = []; // index 0 = extruder 1, etc.
   let filamentMaterials = []; // per-extruder: { type, density, name, vendor }
@@ -475,6 +494,7 @@ async function parseBambu3MF(buffer) {
     } catch (e) { console.warn('[3MF] Failed to parse project_settings.config:', e.message); }
   }
 
+  await progress('Reading model settings...', 30);
   // Step B: Extract object → extruder mapping AND part names from model_settings.config
   const objectExtruderMap = new Map(); // objectId → extruder number (1-based)
   const objectNameMap = new Map(); // objectId → name string
@@ -534,6 +554,7 @@ async function parseBambu3MF(buffer) {
     } catch (e) { console.warn('[3MF] Failed to parse model_settings.config:', e.message); }
   }
 
+  await progress('Mapping colors...', 40);
   // Step C: Build objectId → color by combining extruder map + filament colors
   const objectColorMap = new Map();
   for (const [objId, extruder] of objectExtruderMap) {
@@ -575,6 +596,7 @@ async function parseBambu3MF(buffer) {
   //   2. Parse main model for items → components → resolve via p:path + objectid
   //   3. Apply extruder-based colors from objectColorMap
 
+  await progress('Building mesh index...', 50);
   // Build mesh index: "filepath::objectId" → { vertices, triangles }
   const meshIndex = new Map(); // key: "normalizedPath::objId" → mesh data array
   const pNS = 'http://schemas.microsoft.com/3dmanufacturing/production/2015/06';
@@ -615,6 +637,7 @@ async function parseBambu3MF(buffer) {
     });
   }
 
+  await progress('Resolving components...', 65);
   // Find main model file (the one with <build> items that have components with p:path)
   const mainModelFile = modelFiles.find(f => f.includes('3dmodel.model')) || modelFiles[0];
   const mainXml = new TextDecoder().decode(unzipped[mainModelFile]);
@@ -634,6 +657,7 @@ async function parseBambu3MF(buffer) {
     }
   });
 
+  await progress('Building geometry...', 75);
   // Parse build items from main model
   mainDoc.querySelectorAll('*').forEach(el => {
     if (el.localName !== 'item') return;
@@ -731,6 +755,7 @@ async function parseBambu3MF(buffer) {
   }
 
   if (plateGroups.size === 0) throw new Error('No geometry found in 3MF file');
+  await progress('Assembling plates...', 90);
   const sortedPlates = [...plateGroups.entries()].sort((a, b) => a[0] - b[0]);
   for (const [id, pg] of sortedPlates) {
     // Set plate group name from Bambu plate name, fallback to "Plate N"
@@ -1585,6 +1610,9 @@ function updateUI(fileName) {
   modelNameText.textContent = fileName.replace('.3mf', '');
   modelNameEl.classList.remove('model-name-hidden');
   openBtn.classList.remove('model-name-hidden');
+  const bambuBtn = document.getElementById('bambu-btn');
+  if (hasFilamentData) bambuBtn.classList.remove('model-name-hidden');
+  else bambuBtn.classList.add('model-name-hidden');
 
   plateList.innerHTML = '';
   if (plates.length > 1) {
@@ -1708,8 +1736,13 @@ function updateModelInfo(plate) {
   modelInfo.innerHTML = `<div><span class="text-zinc-100">Objects:</span> ${meshCount}</div><div><span class="text-zinc-100">Triangles:</span> ${Math.round(tris).toLocaleString()}</div><div><span class="text-zinc-100">Plates:</span> ${plates.length}</div>`;
 }
 
-function showLoading(t) { loadingText.textContent = t || 'Loading...'; loadingOverlay.style.display = 'flex'; }
-function hideLoading() { loadingOverlay.style.display = 'none'; }
+const loadingBar = document.getElementById('loading-bar');
+function showLoading(t, pct) {
+  loadingText.textContent = t || 'Loading...';
+  loadingOverlay.style.display = 'flex';
+  if (pct !== undefined) loadingBar.style.width = Math.min(100, Math.max(0, pct)) + '%';
+}
+function hideLoading() { loadingOverlay.style.display = 'none'; loadingBar.style.width = '0%'; }
 
 // ─── Material / Weight Controls ───
 MATERIALS.forEach((m, i) => {
@@ -1809,6 +1842,41 @@ document.getElementById('btn-wireframe').onclick = function() {
   wireframeMode = !wireframeMode;
   this.classList.toggle('active', wireframeMode);
   if(modelGroup) modelGroup.traverse(c => { if(c.isMesh && c.material) c.material.wireframe = wireframeMode; });
+};
+
+// "Open in Bambu Studio" — store file in SW cache, serve via URL, open via protocol handler
+document.getElementById('bambu-btn').onclick = async function() {
+  if (!loadedFile) return;
+  const btn = this;
+  btn.textContent = 'Opening...';
+  try {
+    const buffer = await loadedFile.arrayBuffer();
+    const sw = navigator.serviceWorker?.controller;
+    if (sw) {
+      // Store file in service worker cache and get a servable URL
+      const fileUrl = await new Promise((resolve, reject) => {
+        const handler = e => {
+          if (e.data?.type === '3MF_STORED') {
+            navigator.serviceWorker.removeEventListener('message', handler);
+            resolve(e.data.url);
+          }
+        };
+        navigator.serviceWorker.addEventListener('message', handler);
+        sw.postMessage({ type: 'STORE_3MF', buffer, fileName: loadedFile.name });
+        setTimeout(() => reject(new Error('timeout')), 3000);
+      });
+      // Launch Bambu Studio via protocol handler with the servable URL
+      window.location.href = `bambustudio://open?file=${encodeURIComponent(fileUrl)}`;
+    } else {
+      // No service worker — fall back to just trying the protocol
+      window.location.href = 'bambustudio://open';
+    }
+  } catch (e) {
+    console.warn('Bambu Studio launch failed:', e);
+  }
+  setTimeout(() => {
+    btn.innerHTML = `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg> Bambu Studio`;
+  }, 1500);
 };
 
 document.addEventListener('keydown', e => {
