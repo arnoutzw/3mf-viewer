@@ -1047,8 +1047,17 @@ async function loadSTEP(file) {
   try {
     const arrayBuffer = await file.arrayBuffer();
     showLoading('Loading STEP parser (OpenCascade)...', 10);
-    const occt = await import('https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js');
-    const occtModule = await occt.default();
+    // occt-import-js exposes a global `occtimportjs` function, not an ES module
+    if (!window.occtimportjs) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js';
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('Failed to load OpenCascade'));
+        document.head.appendChild(s);
+      });
+    }
+    const occtModule = await window.occtimportjs();
     showLoading('Parsing STEP...', 30);
     const fileBuffer = new Uint8Array(arrayBuffer);
     const result = occtModule.ReadStepFile(fileBuffer, null);
@@ -1057,12 +1066,18 @@ async function loadSTEP(file) {
     const object = new THREE.Group();
     for (const resMesh of result.meshes) {
       const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(resMesh.attributes.position.array, 3));
+      const posArr = resMesh.attributes.position.array instanceof Float32Array
+        ? resMesh.attributes.position.array : new Float32Array(resMesh.attributes.position.array);
+      geometry.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
       if (resMesh.attributes.normal) {
-        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(resMesh.attributes.normal.array, 3));
+        const normArr = resMesh.attributes.normal.array instanceof Float32Array
+          ? resMesh.attributes.normal.array : new Float32Array(resMesh.attributes.normal.array);
+        geometry.setAttribute('normal', new THREE.BufferAttribute(normArr, 3));
       }
       if (resMesh.index) {
-        geometry.setIndex(new THREE.BufferAttribute(resMesh.index.array, 1));
+        const idxArr = resMesh.index.array instanceof Uint32Array
+          ? resMesh.index.array : new Uint32Array(resMesh.index.array);
+        geometry.setIndex(new THREE.BufferAttribute(idxArr, 1));
       }
       geometry.computeVertexNormals();
       let color = new THREE.Color(0xf59e0b);
