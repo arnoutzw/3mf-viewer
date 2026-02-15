@@ -1,6 +1,6 @@
 # Bambu 3MF Viewer — Build Log
 
-A complete PWA for viewing Bambu Lab 3MF print files, built from scratch in a single coding session. What started as reverse-engineering MakerWorld's viewer became a 1,453-line single-file application with a custom 3MF parser, Three.js renderer, multi-plate layout engine, and physics-aware lay-flat optimizer.
+A complete PWA for viewing Bambu Lab 3MF print files, built from scratch across two coding sessions. What started as reverse-engineering MakerWorld's viewer became an ~1,850-line single-file application with a custom 3MF parser, Three.js renderer, multi-plate layout engine, physics-aware lay-flat optimizer, full Bambu Studio project integration, and a one-click "Open in Bambu Studio" button.
 
 ---
 
@@ -89,24 +89,72 @@ score = bedContactArea × 10
 
 The key insight was that stability penalties must **scale with object dimensions** to compete with area-based rewards. A normalized 0–1 CoG ratio with a fixed weight of 15 is meaningless next to bed contact areas measured in thousands of mm². Multiplying the ratio by `totalH` converts it back to absolute millimeters, making the penalty proportional to how dangerously tall the orientation actually is.
 
+## Phase 6 — Bambu Studio Project Integration
+
+Session two focused on making the viewer understand Bambu Studio's full project structure, not just the geometry.
+
+### Part Names & Objects Panel
+
+Bambu stores object and part names as `<metadata key="name" value="..."/>` inside `<object>` and `<part>` elements in `model_settings.config`. We extract these into `objectNameMap` and `partNameMap`, propagate them to Three.js meshes via `mesh.name`, and display them in the Objects panel with visibility toggles and click-to-focus.
+
+### Plate Assignments from Bambu Studio
+
+The initial approach used the `partnumber` attribute on `<item>` elements for plate grouping — but every item in Bambu files has `partnumber=None`. The actual plate system lives in `model_settings.config`:
+
+```xml
+<plate>
+  <metadata key="plater_id" value="1"/>
+  <metadata key="plater_name" value="Case + spool"/>
+  <model_instance>
+    <metadata key="object_id" value="3"/>
+  </model_instance>
+</plate>
+```
+
+We parse `<plate>` → `<model_instance>` to build `objectPlateMap` (objectId → platerId) and `plateNameMap` (platerId → name like "Case + spool", "Inserts + latches", "Gasket"). The item resolution code now checks `objectPlateMap` first, falling back to `partnumber` for non-Bambu files.
+
+A critical bug surfaced here: `autoLayoutPlates()` was destroying the Bambu plate assignments by pooling all meshes and re-binning them across new auto-generated plates. The fix detects named Bambu plates and performs shelf-packing *within* each plate separately instead of across all plates.
+
+### Filament Materials from 3MF
+
+`project_settings.config` contains per-extruder slot arrays: `filament_type` (TPU, PLA, PETG, etc.), `filament_density`, `filament_settings_id`, and `filament_vendor`. These are parsed into a `filamentMaterials` array and propagated to each mesh via `mesh.userData.filament = { type, density, name, vendor }` during `addMeshToPlate()`.
+
+This data overrides the manual material selector — when filament data is present, the material dropdown hides and the weight calculator uses per-mesh filament density instead of the global value. The summary shows a per-filament-type weight breakdown (e.g., "TPU: 12.3g", "PLA: 8.1g", "PETG: 5.4g").
+
+### Open in Bambu Studio
+
+Getting a browser-based viewer to launch a desktop app went through three iterations:
+
+1. **Download button** — just downloaded the file, didn't open anything.
+2. **`bambustudioopen://` protocol** — Safari rejected it as invalid.
+3. **Service worker file sharing** — the winning approach. The service worker (v4) stores the loaded 3MF in a `SHARE_CACHE`, serves it at `/shared/filename.3mf` via a fetch handler, and the button navigates to `bambustudio://open?file=<URL>`. This is the same mechanism MakerWorld uses. PR #6856 on BambuStudio lifted the domain restriction that previously limited this to makerworld.com.
+
+The button only appears for Bambu files (detected via presence of filament data).
+
+### Progress Bar
+
+A loading progress bar tracks each parsing stage (10%–95%). The initial implementation called `showLoading(msg, pct)` between synchronous steps, but the browser never repainted because the entire `parseBambu3MF` function ran in a single event loop tick despite being `async`. The fix: make the `progress()` helper `async` with `await new Promise(r => setTimeout(r, 0))` after each DOM update, yielding to the browser's rendering thread.
+
 ## Architecture Summary
 
-The final app is a single HTML file (~106KB, ~1,453 lines) containing:
+The final app is a single HTML file (~1,850 lines) containing:
 
 | Component | Description |
 |-----------|-------------|
 | **3MF Parser** | Custom XML/ZIP parser handling Bambu extensions |
 | **STL Parser** | Binary + ASCII STL support for imported models |
+| **Bambu Project Reader** | Parses `model_settings.config` + `project_settings.config` for plates, parts, filaments |
 | **Three.js Scene** | Lit environment with shadows, orbit controls |
 | **Embedded Buildplate** | Base64-encoded X1C bed geometry |
 | **Raycaster** | Click-to-select with highlight materials |
-| **Material DB** | 14 filament types with densities |
-| **Weight Calculator** | Signed tetrahedron volume + infill/wall model |
-| **Bin Packer** | Shelf-based multi-plate auto-layout |
+| **Material DB** | 14 filament types with densities, overridden by per-mesh Bambu filament data |
+| **Weight Calculator** | Signed tetrahedron volume + infill/wall model, per-filament breakdown |
+| **Bin Packer** | Shelf-based multi-plate auto-layout, preserves Bambu plate groupings |
 | **Lay-Flat Optimizer** | Physics-aware orientation scoring |
-| **Service Worker** | Offline cache-first PWA |
+| **Bambu Studio Launcher** | Service worker file sharing + `bambustudio://open` protocol |
+| **Service Worker** | Offline cache-first PWA + shared file serving for Bambu Studio |
 
-Supporting files: `sw.js` (service worker), `manifest.json` (PWA manifest with file handlers), `base.stl` (source buildplate mesh), and two PWA icons in amber/zinc theme.
+Supporting files: `sw.js` (service worker v4), `manifest.json` (PWA manifest with file handlers), `base.stl` (source buildplate mesh), and two PWA icons in amber/zinc theme.
 
 ## Bug Fix Chronicle
 
@@ -158,6 +206,31 @@ Beyond the major rewrites, the session produced a steady stream of bugs found an
 **Root cause:** The center-of-gravity penalty used normalized ratios (0–1) with small fixed weights (15 for height, 12 for lateral offset), producing a maximum penalty of ~27 points. Meanwhile, `bedContactArea × 10` produces values in the thousands for any reasonable face. The CoG penalty was statistically irrelevant.
 **Fix:** Made all stability penalties dimension-aware. `cogHeightRatio` is now multiplied by `totalH` to produce absolute millimeters, weighted at 3.0. Lateral offset is similarly scaled by `totalH × 2.0`. Added a new `aspectPenalty = totalH² / footprintArea × 5.0` term that specifically catches the "thin object on its side" degenerate case — a 50mm-tall object on a 90mm² edge footprint scores 139 points of penalty vs. near-zero when flat. Also bumped the base height penalty from `2.0` to `5.0`.
 
+### Bug: `partnumber` is always `None` in Bambu 3MF files
+**Symptom:** All objects ended up on Plate 0 despite having three distinct plates in Bambu Studio.
+**Root cause:** The parser was using the `partnumber` attribute on `<item>` elements, but Bambu sets this to `None` for all items. Plate assignments are stored separately in `model_settings.config` under `<plate>` → `<model_instance>` elements.
+**Fix:** Parse `model_settings.config` to build `objectPlateMap` (objectId → platerId) and use it as the primary lookup, falling back to `partnumber` only for non-Bambu files.
+
+### Bug: `autoLayoutPlates()` destroying Bambu plate groupings
+**Symptom:** After parsing three named plates correctly, the layout engine merged everything into two auto-generated plates with generic names.
+**Root cause:** `autoLayoutPlates()` pooled all meshes from all plates into a single array, then re-binned them across new plates using shelf packing. This destroyed the original Bambu plate assignments and names.
+**Fix:** Added detection of named Bambu plates (`hasBambuPlates`). When present, the layout runs *within* each existing plate separately rather than pooling across plates. Only falls back to cross-plate re-binning for generic files.
+
+### Bug: Bambu Studio button downloads file instead of opening app
+**Symptom:** Clicking "Open in Bambu Studio" just downloaded the `.3mf` file.
+**Root cause:** First implementation created a blob download link, which is a browser download action, not a protocol handler invocation.
+**Fix:** Replaced with `bambustudio://open?file=<URL>` protocol. Required a service worker to serve the file at a stable URL that Bambu Studio can fetch.
+
+### Bug: Safari rejects `bambustudio://open` URL as invalid
+**Symptom:** User got "Safari kan de pagina niet openen omdat het adres ongeldig is" (Safari can't open the page because the address is invalid).
+**Root cause:** The `file=` parameter was pointing to a blob URL, which Bambu Studio can't fetch. The protocol handler needs a real HTTP(S) URL that the desktop app can download from.
+**Fix:** Service worker v4 stores the file in a `SHARE_CACHE` and serves it at `/shared/filename.3mf`. The button passes this origin-relative URL to the protocol handler, giving Bambu Studio a fetchable endpoint.
+
+### Bug: Progress bar shows "reading" for entire load time
+**Symptom:** Despite eight `progress()` calls at different stages, the bar stayed at its initial state throughout loading.
+**Root cause:** `parseBambu3MF` is `async` but all its work is synchronous within a single event loop tick. The `showLoading()` calls update DOM properties (`textContent`, `style.width`) but the browser batches these and only repaints after the function returns — by which time loading is complete.
+**Fix:** Made `progress()` async with `await new Promise(r => setTimeout(r, 0))` after each DOM update. The `setTimeout(0)` yields to the browser's event loop, allowing a repaint between each parsing stage.
+
 ## What Made It Work
 
 A few principles that kept this session productive:
@@ -166,3 +239,6 @@ A few principles that kept this session productive:
 - **Measure, don't estimate.** The lay-flat optimizer only worked correctly once it started measuring actual bed contact area instead of using face cluster area as a proxy.
 - **Scale penalties with geometry.** Dimensionless ratios with fixed weights get drowned out by dimension-ful metrics. The CoG penalty only became effective when multiplied by `totalH` to produce values in the same unit-space as bed contact area.
 - **Test both directions.** The 180° flip bug was a simple oversight — always test the complement of any orientation candidate.
+- **Read the proprietary config, not the standard spec.** Bambu's plate system, filament data, and part names all live in non-standard config files (`model_settings.config`, `project_settings.config`) rather than in standard 3MF attributes. The format is documented nowhere — you have to unzip and read the XML.
+- **Don't destroy what you parsed.** The auto-layout engine was correct in isolation but destructive in context — it re-binned plates that were already correctly assigned. Feature interactions like this are easy to miss.
+- **Yield to the renderer.** An `async` function isn't actually asynchronous if all its work is synchronous. DOM updates are batched until the event loop is free. A single `setTimeout(0)` after each progress call is all it takes to let the browser repaint.
