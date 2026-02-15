@@ -78,10 +78,10 @@
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
   </div>
-  <h2 class="font-mono font-bold text-xl text-amber-500 mb-2">Drop a .3mf file</h2>
-  <p class="text-zinc-500 text-sm font-mono mb-5">Bambu Lab 3MF viewer &middot; works offline</p>
+  <h2 class="font-mono font-bold text-xl text-amber-500 mb-2">Drop a 3D file</h2>
+  <p class="text-zinc-500 text-sm font-mono mb-5">3MF &middot; STL &middot; OBJ &middot; STEP &middot; works offline</p>
   <button class="bg-amber-500 hover:bg-amber-400 text-zinc-900 font-mono font-bold px-6 py-2.5 rounded-lg transition-colors cursor-pointer" id="browse-btn">Open File</button>
-  <input type="file" id="file-input" accept=".3mf" hidden>
+  <input type="file" id="file-input" accept=".3mf,.stl,.obj,.step,.stp" hidden>
 </div>
 
 <!-- ── Loading Overlay ── -->
@@ -156,6 +156,28 @@
 
 <!-- ── Model Info ── -->
 
+<!-- ── Light Controls Popup ── -->
+<div id="light-popup" class="fixed bottom-20 left-1/2 -translate-x-1/2 hidden bg-zinc-900 border border-zinc-700 rounded-xl p-4 z-[110] w-64 shadow-xl">
+  <div class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider mb-3">Light Position</div>
+  <div class="flex flex-col gap-3">
+    <div class="flex items-center gap-2">
+      <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-10 shrink-0">Angle</label>
+      <input type="range" id="light-azimuth" min="0" max="360" value="225" class="flex-1 accent-amber-500 h-1 cursor-pointer">
+      <span id="light-azimuth-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">225°</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-10 shrink-0">Height</label>
+      <input type="range" id="light-elevation" min="10" max="85" value="60" class="flex-1 accent-amber-500 h-1 cursor-pointer">
+      <span id="light-elevation-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">60°</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-10 shrink-0">Bright</label>
+      <input type="range" id="light-intensity" min="20" max="300" value="180" class="flex-1 accent-amber-500 h-1 cursor-pointer">
+      <span id="light-intensity-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">1.8</span>
+    </div>
+  </div>
+</div>
+
 <!-- ── Bottom Toolbar ── -->
 <div id="bottom-bar" class="fixed bottom-5 left-1/2 -translate-x-1/2 hidden items-center gap-0.5 bg-zinc-900 border border-zinc-700 rounded-full px-2.5 py-1.5 z-[100]">
   <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-reset">
@@ -193,8 +215,12 @@
   </button>
   <div class="w-px h-5 bg-zinc-700 mx-1"></div>
   <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-layflat">
-    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Lay Flat</span>
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Lay Flat (Auto)</span>
     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L6 8h3v5h6V8h3L12 2z" fill="currentColor" opacity="0.15"/><path d="M12 2L6 8h3v5h6V8h3L12 2z"/><line x1="4" y1="18" x2="20" y2="18"/><line x1="4" y1="21" x2="20" y2="21"/></svg>
+  </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-faceflat">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Pick Face to Flatten</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" fill="currentColor" opacity="0.15"/><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/><circle cx="12" cy="10" r="1.5" fill="currentColor"/></svg>
   </button>
   <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-layout">
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Layout</span>
@@ -207,6 +233,10 @@
   <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-wireframe">
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Wire</span>
     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+  </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-light">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Light</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" fill="currentColor" opacity="0.15"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
   </button>
   <div class="w-px h-5 bg-zinc-700 mx-1"></div>
   <button class="tb-btn active w-auto h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative px-2 gap-1" id="btn-quality">
@@ -232,6 +262,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
@@ -257,6 +288,8 @@ let modelCenter = new THREE.Vector3();
 let modelSize = new THREE.Vector3();
 let cameraDistance = 300;
 let selectedMesh = null;
+let facePickMode = false;
+let faceHighlightMesh = null;
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
@@ -510,7 +543,7 @@ function initScene() {
     new THREE.PlaneGeometry(30, 30),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.4, 1.3), side: THREE.DoubleSide })
   );
-  keyPanel.position.set(5, 12, 2);
+  keyPanel.position.set(5, 12, -2);
   keyPanel.lookAt(0, 0, 0);
   envScene.add(keyPanel);
 
@@ -519,7 +552,7 @@ function initScene() {
     new THREE.PlaneGeometry(6, 25),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(2.0, 2.0, 2.2), side: THREE.DoubleSide })
   );
-  rimPanel.position.set(10, 3, -8);
+  rimPanel.position.set(10, 3, 8);
   rimPanel.lookAt(0, 0, 0);
   envScene.add(rimPanel);
 
@@ -528,7 +561,7 @@ function initScene() {
     new THREE.PlaneGeometry(25, 20),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 0.5, 0.7), side: THREE.DoubleSide })
   );
-  fillPanel.position.set(-8, -2, -5);
+  fillPanel.position.set(-8, -2, 5);
   fillPanel.lookAt(0, 0, 0);
   envScene.add(fillPanel);
 
@@ -537,7 +570,7 @@ function initScene() {
     new THREE.PlaneGeometry(20, 15),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 0.25, 0.2), side: THREE.DoubleSide })
   );
-  bouncePanel.position.set(0, -10, 6);
+  bouncePanel.position.set(0, -10, -6);
   bouncePanel.lookAt(0, 0, 0);
   envScene.add(bouncePanel);
 
@@ -546,7 +579,7 @@ function initScene() {
     new THREE.PlaneGeometry(4, 12),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 1.3, 1.5), side: THREE.DoubleSide })
   );
-  accentPanel.position.set(-9, 4, -7);
+  accentPanel.position.set(-9, 4, 7);
   accentPanel.lookAt(0, 0, 0);
   envScene.add(accentPanel);
 
@@ -564,7 +597,7 @@ function initScene() {
   // Key light: warm directional with high-res shadows
   const dirLight = new THREE.DirectionalLight(0xfff5e6, 1.8);
   dirLightRef = dirLight;
-  dirLight.position.set(150, 350, 200);
+  dirLight.position.set(150, 350, -200);
   dirLight.castShadow = true;
   dirLight.shadow.mapSize.set(4096, 4096);
   dirLight.shadow.camera.near = 1;
@@ -579,12 +612,12 @@ function initScene() {
 
   // Fill light: cool blue from opposite side
   const fillLight = new THREE.DirectionalLight(0xb0c4ff, 0.4);
-  fillLight.position.set(-120, 80, -100);
+  fillLight.position.set(-120, 80, 100);
   scene.add(fillLight);
 
   // Rim/back light: subtle warm edge definition
   const rimLight = new THREE.DirectionalLight(0xffe0c0, 0.3);
-  rimLight.position.set(-50, 120, -200);
+  rimLight.position.set(-50, 120, 200);
   scene.add(rimLight);
 
   // Hemisphere: very subtle ground-bounce fill
@@ -948,6 +981,122 @@ async function load3MF(file) {
     console.error('Load error:', err);
     showLoading('Error: ' + err.message);
     setTimeout(() => { hideLoading(); dropZone.classList.remove('hidden'); }, 3000);
+  }
+}
+
+async function loadSTL(file) {
+  showLoading('Reading ' + file.name + '...', 0);
+  dropZone.classList.add('hidden');
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    showLoading('Parsing STL...', 30);
+    const loader = new STLLoader();
+    const geometry = loader.parse(arrayBuffer);
+    geometry.computeVertexNormals();
+    // Center on XZ and place on bed (Y=0)
+    geometry.computeBoundingBox();
+    const bb = geometry.boundingBox;
+    const cx = (bb.max.x + bb.min.x) / 2;
+    const cz = (bb.max.z + bb.min.z) / 2;
+    geometry.translate(-cx, -bb.min.y, -cz);
+    const material = createFDMMaterial(new THREE.Color(0xf59e0b));
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = file.name.replace(/\.\w+$/, '');
+    const object = new THREE.Group();
+    object.add(mesh);
+    object.userData = {};
+    await processModel(object, file.name);
+  } catch (err) {
+    console.error('STL load error:', err);
+    showLoading('Error: ' + err.message);
+    setTimeout(() => { hideLoading(); dropZone.classList.remove('hidden'); }, 3000);
+  }
+}
+
+async function loadOBJ(file) {
+  showLoading('Reading ' + file.name + '...', 0);
+  dropZone.classList.add('hidden');
+  try {
+    const text = await file.text();
+    showLoading('Parsing OBJ...', 30);
+    const loader = new OBJLoader();
+    const object = loader.parse(text);
+    // Center on XZ and place on bed (Y=0), apply default material
+    const objBox = new THREE.Box3().setFromObject(object);
+    const cx = (objBox.max.x + objBox.min.x) / 2;
+    const cz = (objBox.max.z + objBox.min.z) / 2;
+    object.traverse(m => {
+      if (m.isMesh) {
+        m.geometry.computeVertexNormals();
+        m.geometry.translate(-cx, -objBox.min.y, -cz);
+        m.material = createFDMMaterial(new THREE.Color(0xf59e0b));
+      }
+    });
+    object.userData = {};
+    await processModel(object, file.name);
+  } catch (err) {
+    console.error('OBJ load error:', err);
+    showLoading('Error: ' + err.message);
+    setTimeout(() => { hideLoading(); dropZone.classList.remove('hidden'); }, 3000);
+  }
+}
+
+async function loadSTEP(file) {
+  showLoading('Reading ' + file.name + '...', 0);
+  dropZone.classList.add('hidden');
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    showLoading('Loading STEP parser (OpenCascade)...', 10);
+    const occt = await import('https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js');
+    const occtModule = await occt.default();
+    showLoading('Parsing STEP...', 30);
+    const fileBuffer = new Uint8Array(arrayBuffer);
+    const result = occtModule.ReadStepFile(fileBuffer, null);
+    if (!result.success) throw new Error('STEP parsing failed');
+    showLoading('Building geometry...', 60);
+    const object = new THREE.Group();
+    for (const resMesh of result.meshes) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(resMesh.attributes.position.array, 3));
+      if (resMesh.attributes.normal) {
+        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(resMesh.attributes.normal.array, 3));
+      }
+      if (resMesh.index) {
+        geometry.setIndex(new THREE.BufferAttribute(resMesh.index.array, 1));
+      }
+      geometry.computeVertexNormals();
+      let color = new THREE.Color(0xf59e0b);
+      if (resMesh.color) {
+        color = new THREE.Color(resMesh.color[0] / 255, resMesh.color[1] / 255, resMesh.color[2] / 255);
+      }
+      const material = createFDMMaterial(color);
+      const mesh = new THREE.Mesh(geometry, material);
+      object.add(mesh);
+    }
+    // Center on XZ and place on bed (Y=0)
+    const stepBox = new THREE.Box3().setFromObject(object);
+    const scx = (stepBox.max.x + stepBox.min.x) / 2;
+    const scz = (stepBox.max.z + stepBox.min.z) / 2;
+    object.traverse(m => {
+      if (m.isMesh) m.geometry.translate(-scx, -stepBox.min.y, -scz);
+    });
+    object.userData = {};
+    await processModel(object, file.name);
+  } catch (err) {
+    console.error('STEP load error:', err);
+    showLoading('Error: ' + err.message);
+    setTimeout(() => { hideLoading(); dropZone.classList.remove('hidden'); }, 3000);
+  }
+}
+
+function loadFile(file) {
+  const ext = file.name.toLowerCase().split('.').pop();
+  switch (ext) {
+    case '3mf': load3MF(file); break;
+    case 'stl': loadSTL(file); break;
+    case 'obj': loadOBJ(file); break;
+    case 'step': case 'stp': loadSTEP(file); break;
+    default: console.warn('Unsupported file type:', ext);
   }
 }
 
@@ -1992,6 +2141,16 @@ async function autoLayoutPlates() {
       toRemove.forEach(m => plate.group.remove(m));
       items.sort((a, b) => (b.w * b.d) - (a.w * a.d));
 
+      // Single item on plate: center it
+      if (items.length === 1) {
+        const item = items[0];
+        item.mesh.position.x += -item.cx;
+        item.mesh.position.z += -item.cz;
+        item.mesh.position.y += -(item.cy - item.h / 2);
+        plate.group.add(item.mesh);
+        continue;
+      }
+
       const { placed, overflow } = shelfPack(items, BED_W, BED_D, gap);
       for (const { item, x, z } of placed) {
         const targetX = -BED_W / 2 + BED_PAD + x + item.w / 2;
@@ -2019,6 +2178,21 @@ async function autoLayoutPlates() {
 
   plates.forEach(p => modelGroup.remove(p.group));
   plates = [];
+
+  // Single object: center on the bed
+  if (allItems.length === 1) {
+    const item = allItems[0];
+    const pg = new THREE.Group();
+    pg.visible = false;
+    item.mesh.position.x += -item.cx;
+    item.mesh.position.z += -item.cz;
+    item.mesh.position.y += -(item.cy - item.h / 2);
+    pg.add(item.mesh);
+    plates.push({ group: pg, name: 'All Objects', colors: [] });
+    modelGroup.add(pg);
+    console.log('Auto-layout: single object centered on bed');
+    return;
+  }
 
   const gap = 8;
   let remaining = allItems;
@@ -2318,7 +2492,7 @@ function setCameraView(view) {
 
 // ─── UI ───
 function updateUI(fileName) {
-  modelNameText.textContent = fileName.replace('.3mf', '');
+  modelNameText.textContent = fileName.replace(/\.\w+$/, '');
   modelNameEl.classList.remove('model-name-hidden');
   openBtn.classList.remove('model-name-hidden');
   plateList.innerHTML = '';
@@ -2514,12 +2688,12 @@ document.addEventListener('dragleave', e => { e.preventDefault(); dropZone.class
 document.addEventListener('drop', e => {
   e.preventDefault(); dropZone.classList.remove('drag-over');
   const f = e.dataTransfer?.files[0];
-  if (f && f.name.toLowerCase().endsWith('.3mf')) load3MF(f);
+  if (f) loadFile(f);
 });
 
 document.getElementById('browse-btn').onclick = () => fileInput.click();
 openBtn.onclick = () => fileInput.click();
-fileInput.onchange = e => { const f = e.target.files[0]; if(f) load3MF(f); fileInput.value = ''; };
+fileInput.onchange = e => { const f = e.target.files[0]; if(f) loadFile(f); fileInput.value = ''; };
 
 document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setCameraView(b.dataset.view));
 document.getElementById('btn-reset').onclick = () => { if(plates.length) fitCameraToGroup(allPlatesMode ? modelGroup : plates[activePlateIndex].group); };
@@ -2537,8 +2711,273 @@ document.getElementById('btn-layflat').onclick = async function() {
     const box = c.geometry.boundingBox.clone().applyMatrix4(c.matrixWorld);
     c.position.y -= box.min.y;
   });
+  resolveIntersections(plate.group);
   fitCameraToGroup(plate.group);
 };
+
+// ─── Collision Resolution: push overlapping meshes apart ───
+function getWorldBox(mesh) {
+  mesh.updateMatrixWorld(true);
+  if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+  return mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld);
+}
+
+function boxesOverlapXZ(a, b) {
+  return a.max.x > b.min.x && a.min.x < b.max.x &&
+         a.max.z > b.min.z && a.min.z < b.max.z;
+}
+
+function resolveIntersections(plateGroup) {
+  const meshes = [];
+  plateGroup.traverse(c => { if (c.isMesh) meshes.push(c); });
+  if (meshes.length < 2) return;
+
+  const gap = 2; // mm gap between objects
+  const maxIter = 50;
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    let anyOverlap = false;
+    for (let i = 0; i < meshes.length; i++) {
+      for (let j = i + 1; j < meshes.length; j++) {
+        const boxA = getWorldBox(meshes[i]);
+        const boxB = getWorldBox(meshes[j]);
+        if (!boxesOverlapXZ(boxA, boxB)) continue;
+        anyOverlap = true;
+
+        // Compute overlap on each XZ axis
+        const overlapX = Math.min(boxA.max.x - boxB.min.x, boxB.max.x - boxA.min.x);
+        const overlapZ = Math.min(boxA.max.z - boxB.min.z, boxB.max.z - boxA.min.z);
+
+        // Push apart along the axis with smallest overlap
+        const cA = new THREE.Vector3(), cB = new THREE.Vector3();
+        boxA.getCenter(cA); boxB.getCenter(cB);
+
+        if (overlapX < overlapZ) {
+          const push = (overlapX / 2) + gap;
+          if (cA.x < cB.x) { meshes[i].position.x -= push; meshes[j].position.x += push; }
+          else { meshes[i].position.x += push; meshes[j].position.x -= push; }
+        } else {
+          const push = (overlapZ / 2) + gap;
+          if (cA.z < cB.z) { meshes[i].position.z -= push; meshes[j].position.z += push; }
+          else { meshes[i].position.z += push; meshes[j].position.z -= push; }
+        }
+      }
+    }
+    if (!anyOverlap) break;
+  }
+
+  // Re-ground all meshes (Y=0) after pushing
+  meshes.forEach(m => {
+    const box = getWorldBox(m);
+    if (box.min.y < -0.01 || box.min.y > 0.01) {
+      m.position.y -= box.min.y;
+    }
+  });
+
+  // Clamp to bed bounds
+  const halfW = BED_W / 2, halfD = BED_D / 2;
+  meshes.forEach(m => {
+    const box = getWorldBox(m);
+    if (box.min.x < -halfW) m.position.x += (-halfW - box.min.x);
+    if (box.max.x > halfW) m.position.x -= (box.max.x - halfW);
+    if (box.min.z < -halfD) m.position.z += (-halfD - box.min.z);
+    if (box.max.z > halfD) m.position.z -= (box.max.z - halfD);
+  });
+}
+
+// ─── Face Pick Lay Flat ───
+const faceFlatBtn = document.getElementById('btn-faceflat');
+
+function getCanvas() { return renderer ? renderer.domElement : null; }
+
+function enterFacePickMode() {
+  facePickMode = true;
+  faceFlatBtn.classList.add('active');
+  const c = getCanvas(); if (c) c.style.cursor = 'crosshair';
+  if (controls) controls.enabled = false;
+}
+
+function exitFacePickMode() {
+  facePickMode = false;
+  faceFlatBtn.classList.remove('active');
+  const c = getCanvas(); if (c) c.style.cursor = '';
+  if (controls) controls.enabled = true;
+  removeFaceHighlight();
+}
+
+function removeFaceHighlight() {
+  if (faceHighlightMesh && scene) {
+    scene.remove(faceHighlightMesh);
+    faceHighlightMesh.geometry.dispose();
+    faceHighlightMesh.material.dispose();
+    faceHighlightMesh = null;
+  }
+}
+
+function highlightFace(intersection) {
+  removeFaceHighlight();
+  const mesh = intersection.object;
+  const faceIdx = intersection.faceIndex;
+  const geo = mesh.geometry;
+  const pos = geo.attributes.position;
+  const idx = geo.index;
+
+  const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3();
+  let ia, ib, ic;
+  if (idx) { ia = idx.getX(faceIdx * 3); ib = idx.getX(faceIdx * 3 + 1); ic = idx.getX(faceIdx * 3 + 2); }
+  else { ia = faceIdx * 3; ib = faceIdx * 3 + 1; ic = faceIdx * 3 + 2; }
+  vA.fromBufferAttribute(pos, ia); vB.fromBufferAttribute(pos, ib); vC.fromBufferAttribute(pos, ic);
+
+  // Find coplanar triangles (same normal within ~5°)
+  const edge1 = new THREE.Vector3().subVectors(vB, vA);
+  const edge2 = new THREE.Vector3().subVectors(vC, vA);
+  const clickedNormal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+  // Transform normal to world space
+  const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+  const worldNormal = clickedNormal.clone().applyMatrix3(normalMatrix).normalize();
+
+  const cosThr = Math.cos(5 * Math.PI / 180);
+  const triCount = idx ? idx.count / 3 : pos.count / 3;
+  const highlightVerts = [];
+  const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), tmpC = new THREE.Vector3();
+  const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), n = new THREE.Vector3();
+
+  for (let i = 0; i < triCount; i++) {
+    let a, b, c;
+    if (idx) { a = idx.getX(i*3); b = idx.getX(i*3+1); c = idx.getX(i*3+2); }
+    else { a = i*3; b = i*3+1; c = i*3+2; }
+    tmpA.fromBufferAttribute(pos, a); tmpB.fromBufferAttribute(pos, b); tmpC.fromBufferAttribute(pos, c);
+    e1.subVectors(tmpB, tmpA); e2.subVectors(tmpC, tmpA);
+    n.crossVectors(e1, e2);
+    if (n.length() < 0.0001) continue;
+    n.normalize();
+    const wn = n.clone().applyMatrix3(normalMatrix).normalize();
+    if (wn.dot(worldNormal) > cosThr) {
+      // Transform to world space for highlight
+      tmpA.applyMatrix4(mesh.matrixWorld);
+      tmpB.applyMatrix4(mesh.matrixWorld);
+      tmpC.applyMatrix4(mesh.matrixWorld);
+      highlightVerts.push(tmpA.x, tmpA.y, tmpA.z, tmpB.x, tmpB.y, tmpB.z, tmpC.x, tmpC.y, tmpC.z);
+    }
+  }
+
+  if (highlightVerts.length === 0) return;
+
+  const hlGeo = new THREE.BufferGeometry();
+  hlGeo.setAttribute('position', new THREE.Float32BufferAttribute(highlightVerts, 3));
+  hlGeo.computeVertexNormals();
+  const hlMat = new THREE.MeshBasicMaterial({
+    color: 0x00ff88, transparent: true, opacity: 0.45,
+    side: THREE.DoubleSide, depthTest: true, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -2,
+  });
+  faceHighlightMesh = new THREE.Mesh(hlGeo, hlMat);
+  scene.add(faceHighlightMesh);
+}
+
+function faceFlatFromNormal(intersection) {
+  const mesh = intersection.object;
+  const face = intersection.face;
+  if (!face) return;
+
+  // Get the world-space face normal
+  const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+  const worldNormal = face.normal.clone().applyMatrix3(normalMatrix).normalize();
+
+  // We want this face pointing DOWN (onto the bed)
+  const down = new THREE.Vector3(0, -1, 0);
+  const q = new THREE.Quaternion();
+  const dot = worldNormal.dot(down);
+  if (dot < -0.9999) {
+    q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
+  } else if (dot > 0.9999) {
+    q.identity();
+  } else {
+    q.setFromUnitVectors(worldNormal, down);
+  }
+
+  if (q.angleTo(new THREE.Quaternion()) < 0.02) return; // already flat
+
+  // Apply rotation around mesh center
+  const geo = mesh.geometry;
+  geo.computeBoundingBox();
+  const center = new THREE.Vector3();
+  geo.boundingBox.getCenter(center);
+  center.applyMatrix4(mesh.matrixWorld);
+
+  const toOrigin = new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z);
+  const rotate = new THREE.Matrix4().makeRotationFromQuaternion(q);
+  const fromOrigin = new THREE.Matrix4().makeTranslation(center.x, center.y, center.z);
+  const m4 = new THREE.Matrix4().multiplyMatrices(fromOrigin, rotate).multiply(toOrigin);
+
+  geo.applyMatrix4(m4);
+  geo.computeBoundingBox();
+  geo.computeVertexNormals();
+
+  mesh.position.set(0, 0, 0);
+  mesh.rotation.set(0, 0, 0);
+  mesh.scale.set(1, 1, 1);
+  mesh.updateMatrixWorld(true);
+
+  // Re-ground: move so bottom sits on Y=0
+  const box = geo.boundingBox.clone().applyMatrix4(mesh.matrixWorld);
+  mesh.position.y -= box.min.y;
+
+  // Center on XZ
+  const cx = (box.max.x + box.min.x) / 2;
+  const cz = (box.max.z + box.min.z) / 2;
+  mesh.position.x -= cx;
+  mesh.position.z -= cz;
+}
+
+faceFlatBtn.onclick = function() {
+  if (facePickMode) { exitFacePickMode(); }
+  else { enterFacePickMode(); }
+};
+
+document.getElementById('viewer-canvas').addEventListener('mousemove', e => {
+  if (!facePickMode || !renderer) return;
+  const cv = renderer.domElement;
+  const rect = cv.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const plate = plates[activePlateIndex];
+  if (!plate) return;
+  const meshes = [];
+  plate.group.traverse(c => { if (c.isMesh) meshes.push(c); });
+  const hits = raycaster.intersectObjects(meshes, false);
+  if (hits.length > 0) {
+    highlightFace(hits[0]);
+  } else {
+    removeFaceHighlight();
+  }
+});
+
+document.getElementById('viewer-canvas').addEventListener('click', e => {
+  if (!facePickMode || !renderer) return;
+  const cv = renderer.domElement;
+  const rect = cv.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const plate = plates[activePlateIndex];
+  if (!plate) return;
+  const meshes = [];
+  plate.group.traverse(c => { if (c.isMesh) meshes.push(c); });
+  const hits = raycaster.intersectObjects(meshes, false);
+  if (hits.length > 0) {
+    faceFlatFromNormal(hits[0]);
+    resolveIntersections(plate.group);
+    exitFacePickMode();
+    fitCameraToGroup(plate.group);
+  }
+});
+
+// ESC exits face pick mode
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && facePickMode) exitFacePickMode();
+});
 
 document.getElementById('btn-layout').onclick = async function() {
   if (!modelGroup || plates.length === 0) return;
@@ -2546,7 +2985,7 @@ document.getElementById('btn-layout').onclick = async function() {
   plates.forEach(p => { p.colors = getColors(p.group); });
   activePlateIndex = 0;
   showPlate(0);
-  updateUI(modelNameText.textContent + '.3mf');
+  updateUI(modelNameText.textContent);
 };
 
 document.getElementById('btn-bed').onclick = function() {
@@ -2570,6 +3009,39 @@ document.getElementById('btn-quality').onclick = function() {
   lowFpsStreak = 0;
   applyGraphicsQuality(next);
 };
+
+// ─── Light Controls ───
+const lightPopup = document.getElementById('light-popup');
+const lightAzimuth = document.getElementById('light-azimuth');
+const lightElevation = document.getElementById('light-elevation');
+const lightIntensity = document.getElementById('light-intensity');
+const lightAzimuthVal = document.getElementById('light-azimuth-val');
+const lightElevationVal = document.getElementById('light-elevation-val');
+const lightIntensityVal = document.getElementById('light-intensity-val');
+
+document.getElementById('btn-light').onclick = function() {
+  lightPopup.classList.toggle('hidden');
+};
+
+function updateLightFromControls() {
+  const az = parseFloat(lightAzimuth.value) * Math.PI / 180;
+  const el = parseFloat(lightElevation.value) * Math.PI / 180;
+  const dist = 400;
+  const x = dist * Math.cos(el) * Math.sin(az);
+  const y = dist * Math.sin(el);
+  const z = dist * Math.cos(el) * Math.cos(az);
+  if (dirLightRef) {
+    dirLightRef.position.set(x, y, z);
+    dirLightRef.intensity = parseFloat(lightIntensity.value) / 100;
+  }
+  lightAzimuthVal.textContent = lightAzimuth.value + '°';
+  lightElevationVal.textContent = lightElevation.value + '°';
+  lightIntensityVal.textContent = (parseFloat(lightIntensity.value) / 100).toFixed(1);
+}
+
+lightAzimuth.oninput = updateLightFromControls;
+lightElevation.oninput = updateLightFromControls;
+lightIntensity.oninput = updateLightFromControls;
 
 document.addEventListener('keydown', e => {
   const k = e.key;
