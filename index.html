@@ -143,6 +143,9 @@
   </div>
 </div>
 
+<!-- ── FPS Counter ── -->
+<div id="fps-counter" class="fixed bottom-5 left-5 text-[11px] font-mono text-zinc-600 z-[100] pointer-events-none">0 FPS</div>
+
 <!-- ── Model Info ── -->
 <div id="model-info" class="fixed bottom-[76px] right-[260px] bg-zinc-900 border border-zinc-700 rounded-lg p-3 z-[100] hidden text-xs text-zinc-500 font-mono leading-relaxed"></div>
 
@@ -371,10 +374,19 @@ function createBed(w, d) {
   scene.add(bedGroup);
 }
 
+let fpsFrames = 0, fpsLastTime = performance.now();
+const fpsEl = document.getElementById('fps-counter');
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
+  fpsFrames++;
+  const now = performance.now();
+  if (now - fpsLastTime >= 1000) {
+    fpsEl.textContent = fpsFrames + ' FPS';
+    fpsFrames = 0;
+    fpsLastTime = now;
+  }
 }
 
 function onResize() {
@@ -411,8 +423,7 @@ async function load3MF(file) {
     }
 
     if (!object) throw new Error('Could not parse 3MF');
-    showLoading('Laying out plates...', 95);
-    processModel(object, file.name);
+    await processModel(object, file.name);
   } catch (err) {
     console.error('Load error:', err);
     showLoading('Error: ' + err.message);
@@ -446,6 +457,7 @@ async function parseBambu3MF(buffer, onProgress) {
   await progress('Decompressing ZIP...', 10);
   const fflate = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
   const data = new Uint8Array(buffer);
+  await new Promise(r => setTimeout(r, 0)); // yield before heavy sync decompression
   const unzipped = fflate.unzipSync(data);
 
   const group = new THREE.Group();
@@ -601,32 +613,37 @@ async function parseBambu3MF(buffer, onProgress) {
   const meshIndex = new Map(); // key: "normalizedPath::objId" → mesh data array
   const pNS = 'http://schemas.microsoft.com/3dmanufacturing/production/2015/06';
 
-  for (const modelFile of modelFiles) {
+  for (let fi = 0; fi < modelFiles.length; fi++) {
+    const modelFile = modelFiles[fi];
     const xml = new TextDecoder().decode(unzipped[modelFile]);
     const doc = new DOMParser().parseFromString(xml, 'application/xml');
     const normalizedPath = '/' + modelFile;
 
-    doc.querySelectorAll('*').forEach(el => {
-      if (el.localName !== 'mesh') return;
+    const meshEls = doc.querySelectorAll('mesh');
+    for (let mi = 0; mi < meshEls.length; mi++) {
+      const el = meshEls[mi];
       const vertices = [], triangles = [];
       let meshColor = null;
 
-      el.querySelectorAll('*').forEach(child => {
-        if (child.localName === 'vertex') {
-          vertices.push(parseFloat(child.getAttribute('x')||0), parseFloat(child.getAttribute('y')||0), parseFloat(child.getAttribute('z')||0));
+      // Use getElementsByTagName for speed on large meshes
+      const verts = el.getElementsByTagName('vertex');
+      for (let vi = 0; vi < verts.length; vi++) {
+        const v = verts[vi];
+        vertices.push(parseFloat(v.getAttribute('x')||0), parseFloat(v.getAttribute('y')||0), parseFloat(v.getAttribute('z')||0));
+      }
+      const tris = el.getElementsByTagName('triangle');
+      for (let ti = 0; ti < tris.length; ti++) {
+        const t = tris[ti];
+        triangles.push(parseInt(t.getAttribute('v1')||0), parseInt(t.getAttribute('v2')||0), parseInt(t.getAttribute('v3')||0));
+        if (!meshColor) {
+          const pid = t.getAttribute('pid'), p1 = t.getAttribute('p1');
+          if (pid && p1) meshColor = globalColorMap.get(`${pid}_${p1}`);
         }
-        if (child.localName === 'triangle') {
-          triangles.push(parseInt(child.getAttribute('v1')||0), parseInt(child.getAttribute('v2')||0), parseInt(child.getAttribute('v3')||0));
-          // Standard 3MF color from basematerials
-          const pid = child.getAttribute('pid'), p1 = child.getAttribute('p1');
-          if (pid && p1 && !meshColor) meshColor = globalColorMap.get(`${pid}_${p1}`);
-        }
-      });
+      }
 
       if (vertices.length > 0 && triangles.length > 0) {
         const objEl = el.closest('object') || el.parentElement;
         const objId = objEl?.getAttribute('id') || '0';
-        // Check object-level basematerials color
         const objPid = objEl?.getAttribute('pid'), objPindex = objEl?.getAttribute('pindex');
         if (!meshColor && objPid && objPindex != null) meshColor = globalColorMap.get(`${objPid}_${objPindex}`);
 
@@ -634,7 +651,11 @@ async function parseBambu3MF(buffer, onProgress) {
         if (!meshIndex.has(key)) meshIndex.set(key, []);
         meshIndex.get(key).push({ vertices, triangles, color: meshColor });
       }
-    });
+      // Yield after each mesh to avoid blocking
+      if (mi % 2 === 0) await new Promise(r => setTimeout(r, 0));
+    }
+    const pct = 50 + Math.round((fi + 1) / modelFiles.length * 15);
+    await progress('Building mesh index...', pct);
   }
 
   await progress('Resolving components...', 65);
@@ -659,8 +680,10 @@ async function parseBambu3MF(buffer, onProgress) {
 
   await progress('Building geometry...', 75);
   // Parse build items from main model
-  mainDoc.querySelectorAll('*').forEach(el => {
-    if (el.localName !== 'item') return;
+  const buildItems = [...mainDoc.querySelectorAll('*')].filter(el => el.localName === 'item');
+  let meshesBuilt = 0;
+  for (let bi = 0; bi < buildItems.length; bi++) {
+    const el = buildItems[bi];
     const objectid = el.getAttribute('objectid');
     const itemTransform = parseTransformAttr(el.getAttribute('transform'));
     // Use Bambu plate assignment from model_settings.config, fall back to partnumber
@@ -685,27 +708,30 @@ async function parseBambu3MF(buffer, onProgress) {
     if (components && components.length > 0) {
       for (const comp of components) {
         const combinedXform = multiplyTransforms(itemTransform, comp.transform);
-        // Part name: try partNameMap (sub-part by comp objectid), then assemblyName
         const partName = partNameMap.get(comp.objectid) || assemblyName || '';
-        // Look up meshes in the external file
         const lookupKey = `${comp.path}::${comp.objectid}`;
         const meshArr = meshIndex.get(lookupKey) || [];
         for (const m of meshArr) {
           const colorStr = m.color || extruderColor;
           addMeshToPlate(m, combinedXform, colorStr, plateId, partName, filament);
+          meshesBuilt++;
+          if (meshesBuilt % 3 === 0) await new Promise(r => setTimeout(r, 0));
         }
       }
     } else {
-      // Direct meshes on this object (no components)
       const partName = assemblyName;
       const lookupKey = `/${mainModelFile}::${objectid}`;
       const meshArr = meshIndex.get(lookupKey) || [];
       for (const m of meshArr) {
         const colorStr = m.color || extruderColor;
         addMeshToPlate(m, itemTransform, colorStr, plateId, partName, filament);
+        meshesBuilt++;
+        if (meshesBuilt % 3 === 0) await new Promise(r => setTimeout(r, 0));
       }
     }
-  });
+    const pct = 75 + Math.round((bi + 1) / buildItems.length * 15);
+    await progress('Building geometry...', pct);
+  }
 
   function addMeshToPlate(meshData, transform, colorStr, plateId, partName, filament) {
     const geometry = createGeometryFromMesh(meshData);
@@ -959,7 +985,7 @@ function parseASCIISTL(text) {
 }
 
 // ─── Model Processing ───
-function processModel(object, fileName) {
+async function processModel(object, fileName) {
   if (modelGroup) {
     scene.remove(modelGroup);
     modelGroup.traverse(c => { c.geometry?.dispose(); if(c.material) (Array.isArray(c.material)?c.material:[c.material]).forEach(m=>m.dispose()); });
@@ -999,7 +1025,8 @@ function processModel(object, fileName) {
   }
 
   // Auto-layout all parts onto beds
-  autoLayoutPlates();
+  showLoading('Laying out plates...', 95);
+  await autoLayoutPlates();
   plates.forEach(p => { p.colors = getColors(p.group); });
   scene.add(modelGroup);
   activePlateIndex = 0;
@@ -1283,8 +1310,13 @@ function evaluateOrientation(worldVerts, faces, pivot, quat) {
 }
 
 // Apply lay-flat to all meshes in a group
-function layFlatGroup(group) {
-  group.children.forEach(c => { if (c.isMesh) layFlatMesh(c); });
+async function layFlatGroup(group) {
+  for (const c of group.children) {
+    if (c.isMesh) {
+      layFlatMesh(c);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
 }
 
 // ─── Auto Layout: 2D bin-pack all meshes across plates to fit on bed ───
@@ -1367,9 +1399,11 @@ function shelfPack(items, bedW, bedD, gap) {
 // Run auto-layout: lay flat + pack meshes onto bed
 // If plates already have Bambu names (from model_settings.config), layout within each plate.
 // Otherwise, pool all meshes and re-bin across new plates.
-function autoLayoutPlates() {
+async function autoLayoutPlates() {
   // Lay flat all meshes before computing footprints
-  plates.forEach(p => layFlatGroup(p.group));
+  for (const p of plates) {
+    await layFlatGroup(p.group);
+  }
 
   // Check if we have named plates from Bambu (not generic "Plate N")
   const hasBambuPlates = plates.length > 1 || (plates.length === 1 && plates[0].name && !plates[0].name.match(/^Plate \d+$/));
@@ -1939,11 +1973,11 @@ fileInput.onchange = e => { const f = e.target.files[0]; if(f) load3MF(f); fileI
 document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setCameraView(b.dataset.view));
 document.getElementById('btn-reset').onclick = () => { if(plates.length) fitCameraToGroup(allPlatesMode ? modelGroup : plates[activePlateIndex].group); };
 
-document.getElementById('btn-layflat').onclick = function() {
+document.getElementById('btn-layflat').onclick = async function() {
   if (!modelGroup || plates.length === 0) return;
   // Lay flat all meshes on the active plate, then re-ground them
   const plate = plates[activePlateIndex];
-  layFlatGroup(plate.group);
+  await layFlatGroup(plate.group);
   // Re-ground each mesh at Y=0
   plate.group.children.forEach(c => {
     if (!c.isMesh || !c.geometry) return;
@@ -1955,9 +1989,9 @@ document.getElementById('btn-layflat').onclick = function() {
   fitCameraToGroup(plate.group);
 };
 
-document.getElementById('btn-layout').onclick = function() {
+document.getElementById('btn-layout').onclick = async function() {
   if (!modelGroup || plates.length === 0) return;
-  autoLayoutPlates();
+  await autoLayoutPlates();
   plates.forEach(p => { p.colors = getColors(p.group); });
   activePlateIndex = 0;
   showPlate(0);
