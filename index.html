@@ -210,9 +210,10 @@
     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
   </button>
   <div class="w-px h-5 bg-zinc-700 mx-1"></div>
-  <button class="tb-btn active w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-ssao">
-    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">SSAO</span>
-    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5" fill="currentColor" opacity="0.15"/><circle cx="12" cy="12" r="2"/></svg>
+  <button class="tb-btn active w-auto h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative px-2 gap-1" id="btn-quality">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Graphics Quality</span>
+    <svg class="w-[16px] h-[16px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+    <span id="quality-label" class="text-[10px] font-mono font-semibold uppercase tracking-wider">Ultra</span>
   </button>
 </div>
 
@@ -243,7 +244,10 @@ import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 // ─── State ───
 const BED_W = 256, BED_D = 256; // Bambu X1C build plate (mm)
 const BED_PAD = 5;              // keep 5mm from edges
-let scene, camera, renderer, controls, composer, ssaoPassRef = null;
+let scene, camera, renderer, controls, composer;
+let ssaoPassRef = null, bloomPassRef = null, vignettePassRef = null, smaaPassRef = null, outputPassRef = null;
+let graphicsQuality = 'ultra'; // 'ultra' | 'high' | 'performance'
+let dirLightRef = null;
 let modelGroup = null;
 let bedGroup = null;
 let plates = [];
@@ -393,6 +397,36 @@ function createFDMTextures() {
 
 function createFDMMaterial(color) {
   if (!fdmNormalMap) createFDMTextures();
+
+  if (graphicsQuality === 'performance') {
+    // Performance: basic MeshStandardMaterial — no clearcoat/sheen/IOR overhead
+    return new THREE.MeshStandardMaterial({
+      color,
+      metalness: 0.0,
+      roughness: 0.75,
+      envMapIntensity: 0.3,
+      side: THREE.DoubleSide,
+    });
+  }
+
+  if (graphicsQuality === 'high') {
+    // High: MeshPhysicalMaterial with textures but no clearcoat/sheen
+    return new THREE.MeshPhysicalMaterial({
+      color,
+      metalness: 0.0,
+      roughness: 0.75,
+      normalMap: fdmNormalMap,
+      normalScale: new THREE.Vector2(0.5, 0.5),
+      roughnessMap: fdmRoughnessMap,
+      envMapIntensity: 0.35,
+      side: THREE.DoubleSide,
+      ior: 1.46,
+      specularIntensity: 0.4,
+      specularColor: new THREE.Color(1, 1, 1),
+    });
+  }
+
+  // Ultra: full MeshPhysicalMaterial with clearcoat + sheen + textures
   return new THREE.MeshPhysicalMaterial({
     color,
     metalness: 0.0,
@@ -402,16 +436,12 @@ function createFDMMaterial(color) {
     roughnessMap: fdmRoughnessMap,
     envMapIntensity: 0.35,
     side: THREE.DoubleSide,
-    // Clearcoat: subtle top-layer sheen like real thermoplastic
     clearcoat: 0.08,
     clearcoatRoughness: 0.6,
-    // Sheen: soft diffuse glow at grazing angles (like real PLA)
     sheen: 0.15,
     sheenRoughness: 0.8,
     sheenColor: new THREE.Color(0.5, 0.5, 0.5),
-    // IOR for plastic (PLA ~1.45, PETG ~1.57)
     ior: 1.46,
-    // Subtle specular control
     specularIntensity: 0.4,
     specularColor: new THREE.Color(1, 1, 1),
   });
@@ -536,6 +566,7 @@ function initScene() {
 
   // Key light: warm directional with high-res shadows
   const dirLight = new THREE.DirectionalLight(0xfff5e6, 1.8);
+  dirLightRef = dirLight;
   dirLight.position.set(150, 350, 200);
   dirLight.castShadow = true;
   dirLight.shadow.mapSize.set(4096, 4096);
@@ -579,13 +610,13 @@ function initScene() {
   } catch(e) { console.warn('SSAO not available, skipping AO:', e); }
 
   // Subtle bloom — just enough for specular highlights to glow softly
-  const bloomPass = new UnrealBloomPass(
+  bloomPassRef = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
     0.15,   // strength (very subtle)
     0.8,    // radius
     0.92    // threshold (only bright specular hits bloom)
   );
-  composer.addPass(bloomPass);
+  composer.addPass(bloomPassRef);
 
   // Subtle vignette + film grain for cinematic feel
   const vignetteShader = {
@@ -604,14 +635,16 @@ function initScene() {
         gl_FragColor = vec4(texel.rgb * vig, texel.a);
       }`
   };
-  composer.addPass(new ShaderPass(vignetteShader));
+  vignettePassRef = new ShaderPass(vignetteShader);
+  composer.addPass(vignettePassRef);
 
   // SMAA anti-aliasing (better than FXAA, works with post-processing)
-  const smaaPass = new SMAAPass(window.innerWidth, window.innerHeight);
-  composer.addPass(smaaPass);
+  smaaPassRef = new SMAAPass(window.innerWidth, window.innerHeight);
+  composer.addPass(smaaPassRef);
 
   // Output pass (applies tone mapping + color space to final composite)
-  composer.addPass(new OutputPass());
+  outputPassRef = new OutputPass();
+  composer.addPass(outputPassRef);
 
   // Controls
   controls = new OrbitControls(camera, canvas);
@@ -677,12 +710,68 @@ function createBed(w, d) {
   scene.add(bedGroup);
 }
 
+// ══════════════════════════════════════════════════════════════
+// ── Graphics Quality Tiers ──
+// ══════════════════════════════════════════════════════════════
+// Ultra:       SSAO + Bloom + Vignette + SMAA, 4K shadows, MeshPhysicalMaterial w/ clearcoat+sheen, DPR 2
+// High:        Bloom + Vignette + SMAA (no SSAO), 2K shadows, MeshPhysicalMaterial (no clearcoat/sheen), DPR 2
+// Performance: No post-processing, 1K shadows, MeshStandardMaterial (no PBR extras), DPR 1, built-in AA
+
+function applyGraphicsQuality(quality) {
+  graphicsQuality = quality;
+
+  // ── Post-processing passes ──
+  if (ssaoPassRef)     ssaoPassRef.enabled     = (quality === 'ultra');
+  if (bloomPassRef)    bloomPassRef.enabled     = (quality !== 'performance');
+  if (vignettePassRef) vignettePassRef.enabled  = (quality !== 'performance');
+  if (smaaPassRef)     smaaPassRef.enabled      = (quality !== 'performance');
+  if (outputPassRef)   outputPassRef.enabled    = (quality !== 'performance');
+
+  // ── Shadow map resolution ──
+  if (dirLightRef && dirLightRef.shadow) {
+    const shadowRes = quality === 'ultra' ? 4096 : quality === 'high' ? 2048 : 1024;
+    dirLightRef.shadow.mapSize.set(shadowRes, shadowRes);
+    if (dirLightRef.shadow.map) {
+      dirLightRef.shadow.map.dispose();
+      dirLightRef.shadow.map = null; // forces re-creation at new size
+    }
+  }
+
+  // ── Pixel ratio ──
+  const maxDPR = quality === 'performance' ? 1 : 2;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxDPR));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  if (composer) composer.setSize(window.innerWidth, window.innerHeight);
+
+  // ── Rebuild all part materials for the new tier ──
+  for (const plate of plates) {
+    for (const c of plate.group.children) {
+      if (c.isMesh && c.userData.originalColor) {
+        const oldMat = c.material;
+        c.material = createFDMMaterial(c.userData.originalColor);
+        c.material.wireframe = oldMat.wireframe || false;
+        c.material.needsUpdate = true;
+        oldMat.dispose();
+      }
+    }
+  }
+
+  // ── Update UI label ──
+  const labelEl = document.getElementById('quality-label');
+  if (labelEl) {
+    const labels = { ultra: 'Ultra', high: 'High', performance: 'Perf' };
+    labelEl.textContent = labels[quality];
+  }
+  const btn = document.getElementById('btn-quality');
+  if (btn) btn.classList.toggle('active', quality === 'ultra');
+}
+
 let fpsFrames = 0, fpsLastTime = performance.now();
 const fpsEl = document.getElementById('fps-counter');
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
-  if (composer) composer.render();
+  if (graphicsQuality !== 'performance' && composer) composer.render();
   else renderer.render(scene, camera);
   fpsFrames++;
   const now = performance.now();
@@ -2366,10 +2455,11 @@ document.getElementById('btn-wireframe').onclick = function() {
   if(modelGroup) modelGroup.traverse(c => { if(c.isMesh && c.material) c.material.wireframe = wireframeMode; });
 };
 
-document.getElementById('btn-ssao').onclick = function() {
-  if (!ssaoPassRef) return;
-  ssaoPassRef.enabled = !ssaoPassRef.enabled;
-  this.classList.toggle('active', ssaoPassRef.enabled);
+document.getElementById('btn-quality').onclick = function() {
+  const tiers = ['ultra', 'high', 'performance'];
+  const idx = tiers.indexOf(graphicsQuality);
+  const next = tiers[(idx + 1) % tiers.length];
+  applyGraphicsQuality(next);
 };
 
 // "Open in Bambu Studio" — store file in SW cache, serve via URL, open via protocol handler
@@ -2423,6 +2513,7 @@ document.addEventListener('keydown', e => {
   if(k==='[' && plates.length>1) { if(allPlatesMode) showPlate(plates.length-1); else showPlate(Math.max(0, activePlateIndex-1)); }
   if(k===']' && plates.length>1) { if(allPlatesMode) showPlate(0); else showPlate(Math.min(plates.length-1, activePlateIndex+1)); }
   if(k==='a' && plates.length>1 && !allPlatesMode) showAllPlates();
+  if(k==='q') document.getElementById('btn-quality').click();
 });
 
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
