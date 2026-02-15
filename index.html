@@ -103,10 +103,6 @@
     <span id="model-name-text" class="text-sm font-mono text-zinc-100 truncate"></span>
   </div>
   <div class="pointer-events-auto flex items-center gap-2">
-    <button id="bambu-btn" class="model-name-hidden bg-zinc-900 border border-zinc-700 hover:border-green-500/50 text-zinc-400 hover:text-green-400 px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer" title="Open in Bambu Studio">
-      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg>
-      Bambu Studio
-    </button>
     <button id="open-btn" class="model-name-hidden bg-zinc-900 border border-zinc-700 hover:border-amber-500/50 text-zinc-400 hover:text-amber-400 px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer">
       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       Open
@@ -159,7 +155,6 @@
 <div id="fps-counter" class="fixed bottom-5 left-5 text-sm font-mono font-bold text-zinc-300 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-md z-[100] pointer-events-none">0 FPS</div>
 
 <!-- ── Model Info ── -->
-<div id="model-info" class="fixed bottom-[76px] right-[260px] bg-zinc-900 border border-zinc-700 rounded-lg p-3 z-[100] hidden text-xs text-zinc-500 font-mono leading-relaxed"></div>
 
 <!-- ── Bottom Toolbar ── -->
 <div id="bottom-bar" class="fixed bottom-5 left-1/2 -translate-x-1/2 hidden items-center gap-0.5 bg-zinc-900 border border-zinc-700 rounded-full px-2.5 py-1.5 z-[100]">
@@ -187,6 +182,10 @@
   <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" data-view="top">
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Top</span>
     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h16v8H4z" fill="currentColor" opacity="0.15"/><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+  </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" data-view="iso">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Isometric</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor" opacity="0.15"/><path d="M2 7l10 5 10-5M2 7v10l10 5V12M22 7v10l-10 5V12"/></svg>
   </button>
   <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" data-view="bottom">
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Bottom</span>
@@ -280,7 +279,6 @@ const MATERIALS = [
 ];
 let selectedMaterialIdx = 0;
 let hasFilamentData = false; // true when 3MF provides per-object filament info
-let loadedFile = null; // store the loaded File for "Open in Bambu Studio"
 let infillPercent = 20;    // default 20% infill
 let wallCount = 3;         // number of perimeter walls
 let nozzleDia = 0.4;       // nozzle diameter mm
@@ -300,7 +298,6 @@ const objectsPanel = document.getElementById('objects-panel');
 const objectList = document.getElementById('object-list');
 const materialSelect = document.getElementById('material-select');
 const weightInfo = document.getElementById('weight-info');
-const modelInfo = document.getElementById('model-info');
 const bottomBar = document.getElementById('bottom-bar');
 const openBtn = document.getElementById('open-btn');
 const fileInput = document.getElementById('file-input');
@@ -469,7 +466,7 @@ function initScene() {
   scene.background = new THREE.Color(0x111111); // near-black, matching loading screen
 
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
-  camera.position.set(200, 200, 200);
+  camera.position.set(0, 400, 0);
 
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -687,24 +684,109 @@ function decodeBedGeometry() {
 function createBed(w, d) {
   bedGroup = new THREE.Group();
 
+  // ── Procedural PEI build plate texture ──
+  // Simulates the stippled/brushed texture of a real Bambu textured PEI sheet
+  const bedTexW = 512, bedTexH = 512;
+
+  // Normal map: fine stipple grain + subtle directional brush marks
+  const bedNCanvas = document.createElement('canvas');
+  bedNCanvas.width = bedTexW; bedNCanvas.height = bedTexH;
+  const bedNCtx = bedNCanvas.getContext('2d');
+  const bedNImg = bedNCtx.createImageData(bedTexW, bedTexH);
+  const bnd = bedNImg.data;
+
+  // Roughness map
+  const bedRCanvas = document.createElement('canvas');
+  bedRCanvas.width = bedTexW; bedRCanvas.height = bedTexH;
+  const bedRCtx = bedRCanvas.getContext('2d');
+  const bedRImg = bedRCtx.createImageData(bedTexW, bedTexH);
+  const brd = bedRImg.data;
+
+  for (let y = 0; y < bedTexH; y++) {
+    for (let x = 0; x < bedTexW; x++) {
+      const i = (y * bedTexW + x) * 4;
+
+      // Fine stipple noise (PEI powder coating texture)
+      const stipple1 = Math.sin(x * 47.3 + y * 83.1) * Math.cos(x * 31.7 + y * 67.9);
+      const stipple2 = Math.sin(x * 97.1 + y * 29.3 + 2.7) * Math.cos(x * 53.9 + y * 41.1);
+      const stipple3 = Math.sin(x * 23.9 + y * 109.7 + 5.1) * 0.5;
+
+      // Directional brush marks (subtle horizontal bias)
+      const brush = Math.sin(y * 3.7 + x * 0.3 + Math.sin(x * 0.8) * 2.0) * 0.15;
+
+      // Combine for normal deflection
+      const nx = stipple1 * 0.25 + stipple2 * 0.15 + brush * 0.3;
+      const ny = stipple2 * 0.2 + stipple3 * 0.15 + Math.cos(y * 3.7 + x * 0.3) * 0.08;
+      const nz = 1.0;
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      bnd[i]     = Math.round(((nx / len) * 0.5 + 0.5) * 255);
+      bnd[i + 1] = Math.round(((ny / len) * 0.5 + 0.5) * 255);
+      bnd[i + 2] = Math.round(((nz / len) * 0.5 + 0.5) * 255);
+      bnd[i + 3] = 255;
+
+      // Roughness: high base with stipple variation
+      const rough = 0.82 + stipple1 * 0.08 + stipple3 * 0.05;
+      const rv = Math.max(0, Math.min(255, Math.round(Math.max(0.6, Math.min(0.95, rough)) * 255)));
+      brd[i] = rv; brd[i+1] = rv; brd[i+2] = rv; brd[i+3] = 255;
+    }
+  }
+
+  bedNCtx.putImageData(bedNImg, 0, 0);
+  bedRCtx.putImageData(bedRImg, 0, 0);
+
+  const bedNormalMap = new THREE.CanvasTexture(bedNCanvas);
+  bedNormalMap.wrapS = THREE.RepeatWrapping;
+  bedNormalMap.wrapT = THREE.RepeatWrapping;
+  bedNormalMap.repeat.set(4, 4);
+  bedNormalMap.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+  const bedRoughnessMap = new THREE.CanvasTexture(bedRCanvas);
+  bedRoughnessMap.wrapS = THREE.RepeatWrapping;
+  bedRoughnessMap.wrapT = THREE.RepeatWrapping;
+  bedRoughnessMap.repeat.set(4, 4);
+  bedRoughnessMap.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
   const bedMat = new THREE.MeshPhysicalMaterial({
-    color: 0x3a3a3a,
-    metalness: 0.15,
-    roughness: 0.85,
-    clearcoat: 0.05,
-    clearcoatRoughness: 0.9,
-    envMapIntensity: 0.2,
+    color: 0x2e2e2e,
+    metalness: 0.25,
+    roughness: 0.88,
+    normalMap: bedNormalMap,
+    normalScale: new THREE.Vector2(0.7, 0.7),
+    roughnessMap: bedRoughnessMap,
+    clearcoat: 0.03,
+    clearcoatRoughness: 0.95,
+    envMapIntensity: 0.25,
+    specularIntensity: 0.3,
   });
 
   // Decode embedded buildplate geometry (no fetch needed — works offline & file://)
   const bedGeo = decodeBedGeometry();
+
+  // Generate UVs for bed so textures map correctly
+  bedGeo.computeBoundingBox();
+  const bedBB = bedGeo.boundingBox;
+  const bedPos = bedGeo.attributes.position;
+  const bedUvs = new Float32Array(bedPos.count * 2);
+  const bScaleX = 1.0 / (bedBB.max.x - bedBB.min.x || 1);
+  const bScaleZ = 1.0 / (bedBB.max.z - bedBB.min.z || 1);
+  for (let i = 0; i < bedPos.count; i++) {
+    bedUvs[i * 2]     = (bedPos.getX(i) - bedBB.min.x) * bScaleX;
+    bedUvs[i * 2 + 1] = (bedPos.getZ(i) - bedBB.min.z) * bScaleZ;
+  }
+  bedGeo.setAttribute('uv', new THREE.BufferAttribute(bedUvs, 2));
+
   const plateMesh = new THREE.Mesh(bedGeo, bedMat);
   plateMesh.receiveShadow = true;
   bedGroup.add(plateMesh);
 
-  // Grid overlay
-  const grid = new THREE.GridHelper(Math.max(w, d), Math.max(w, d) / 10, 0x52525b, 0x3f3f46);
-  grid.position.y = 0.05;
+  // Grid overlay — painted white lines
+  const gridMajor = 0x808080;  // major grid lines
+  const gridMinor = 0x5a5a5a;  // minor grid lines
+  const grid = new THREE.GridHelper(Math.max(w, d), Math.max(w, d) / 10, gridMajor, gridMinor);
+  grid.position.y = 0.12;
+  grid.material.opacity = 0.35;
+  grid.material.transparent = true;
+  grid.material.depthWrite = false;
   bedGroup.add(grid);
 
   scene.add(bedGroup);
@@ -836,7 +918,6 @@ function onResize() {
 
 // ─── 3MF Loading (custom Bambu-aware parser) ───
 async function load3MF(file) {
-  loadedFile = file;
   showLoading('Reading ' + file.name + '...', 0);
   dropZone.classList.add('hidden');
 
@@ -2097,7 +2178,6 @@ function showPlate(index) {
   selectMesh(null);
   updateObjectsPanel(plates[index]);
   fitCameraToGroup(plates[index].group);
-  updateModelInfo(plates[index]);
 }
 
 function showAllPlates() {
@@ -2150,7 +2230,6 @@ function showAllPlates() {
 
   // Fit camera to entire scene
   fitCameraToGroup(modelGroup);
-  updateModelInfoAll();
 }
 
 function updateObjectsPanelAll() {
@@ -2196,14 +2275,6 @@ function updateObjectsPanelAll() {
   updateWeightInfo(allMeshes);
 }
 
-function updateModelInfoAll() {
-  let tris = 0, meshCount = 0;
-  plates.forEach(p => {
-    p.group.traverse(c => { if(c.isMesh && c.geometry) { meshCount++; const idx = c.geometry.index; tris += idx ? idx.count/3 : (c.geometry.attributes.position?.count||0)/3; }});
-  });
-  modelInfo.innerHTML = `<div><span class="text-zinc-100">Objects:</span> ${meshCount}</div><div><span class="text-zinc-100">Triangles:</span> ${Math.round(tris).toLocaleString()}</div><div><span class="text-zinc-100">Plates:</span> ${plates.length}</div>`;
-}
-
 function fitCameraToGroup(group) {
   const box = new THREE.Box3().setFromObject(group);
   if (box.isEmpty()) return;
@@ -2212,7 +2283,7 @@ function fitCameraToGroup(group) {
   cameraDistance = Math.max(modelSize.x, modelSize.y, modelSize.z) * 1.8;
   cameraDistance = Math.max(cameraDistance, 50);
   controls.target.copy(modelCenter);
-  camera.position.set(modelCenter.x + cameraDistance * 0.6, modelCenter.y + cameraDistance * 0.5, modelCenter.z + cameraDistance * 0.6);
+  camera.position.set(modelCenter.x, modelCenter.y + cameraDistance, modelCenter.z - 0.01);
   camera.lookAt(modelCenter);
   controls.update();
 
@@ -2232,7 +2303,8 @@ function setCameraView(view) {
   const pos = {
     front: [c.x, c.y, c.z+d], back: [c.x, c.y, c.z-d],
     left: [c.x-d, c.y, c.z], right: [c.x+d, c.y, c.z],
-    top: [c.x, c.y+d, c.z+0.01], bottom: [c.x, c.y-d, c.z+0.01],
+    top: [c.x, c.y+d, c.z-0.01], bottom: [c.x, c.y-d, c.z-0.01],
+    iso: [c.x + d*0.577, c.y + d*0.577, c.z - d*0.577],
   }[view];
   if (!pos) return;
   const start = camera.position.clone(), end = new THREE.Vector3(...pos), t0 = performance.now();
@@ -2249,10 +2321,6 @@ function updateUI(fileName) {
   modelNameText.textContent = fileName.replace('.3mf', '');
   modelNameEl.classList.remove('model-name-hidden');
   openBtn.classList.remove('model-name-hidden');
-  const bambuBtn = document.getElementById('bambu-btn');
-  if (hasFilamentData) bambuBtn.classList.remove('model-name-hidden');
-  else bambuBtn.classList.add('model-name-hidden');
-
   plateList.innerHTML = '';
   if (plates.length > 1) {
     // "All Plates" item
@@ -2277,7 +2345,6 @@ function updateUI(fileName) {
     plateSidebar.classList.add('hidden');
   }
   objectsPanel.classList.remove('hidden');
-  modelInfo.classList.remove('hidden');
   bottomBar.style.display = 'flex';
 }
 
@@ -2374,12 +2441,6 @@ function updateWeightInfo(meshes) {
     <div class="flex justify-between"><span class="text-zinc-500">Infill:</span><span class="text-zinc-300">${infillPercent}%</span></div>
     <div class="flex justify-between"><span class="text-zinc-500">Walls:</span><span class="text-zinc-300">${wallCount}× ${nozzleDia}mm</span></div>
   `;
-}
-
-function updateModelInfo(plate) {
-  let tris = 0, meshCount = 0;
-  plate.group.traverse(c => { if(c.isMesh && c.geometry) { meshCount++; const idx = c.geometry.index; tris += idx ? idx.count/3 : (c.geometry.attributes.position?.count||0)/3; }});
-  modelInfo.innerHTML = `<div><span class="text-zinc-100">Objects:</span> ${meshCount}</div><div><span class="text-zinc-100">Triangles:</span> ${Math.round(tris).toLocaleString()}</div><div><span class="text-zinc-100">Plates:</span> ${plates.length}</div>`;
 }
 
 const loadingBar = document.getElementById('loading-bar');
@@ -2510,41 +2571,6 @@ document.getElementById('btn-quality').onclick = function() {
   applyGraphicsQuality(next);
 };
 
-// "Open in Bambu Studio" — store file in SW cache, serve via URL, open via protocol handler
-document.getElementById('bambu-btn').onclick = async function() {
-  if (!loadedFile) return;
-  const btn = this;
-  btn.textContent = 'Opening...';
-  try {
-    const buffer = await loadedFile.arrayBuffer();
-    const sw = navigator.serviceWorker?.controller;
-    if (sw) {
-      // Store file in service worker cache and get a servable URL
-      const fileUrl = await new Promise((resolve, reject) => {
-        const handler = e => {
-          if (e.data?.type === '3MF_STORED') {
-            navigator.serviceWorker.removeEventListener('message', handler);
-            resolve(e.data.url);
-          }
-        };
-        navigator.serviceWorker.addEventListener('message', handler);
-        sw.postMessage({ type: 'STORE_3MF', buffer, fileName: loadedFile.name });
-        setTimeout(() => reject(new Error('timeout')), 3000);
-      });
-      // Launch Bambu Studio via protocol handler with the servable URL
-      window.location.href = `bambustudio://open?file=${encodeURIComponent(fileUrl)}`;
-    } else {
-      // No service worker — fall back to just trying the protocol
-      window.location.href = 'bambustudio://open';
-    }
-  } catch (e) {
-    console.warn('Bambu Studio launch failed:', e);
-  }
-  setTimeout(() => {
-    btn.innerHTML = `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg> Bambu Studio`;
-  }, 1500);
-};
-
 document.addEventListener('keydown', e => {
   const k = e.key;
   if(k==='r') document.getElementById('btn-reset').click();
@@ -2558,6 +2584,7 @@ document.addEventListener('keydown', e => {
   if(k==='4') setCameraView('right');
   if(k==='5') setCameraView('top');
   if(k==='6') setCameraView('bottom');
+  if(k==='7') setCameraView('iso');
   if(k==='[' && plates.length>1) { if(allPlatesMode) showPlate(plates.length-1); else showPlate(Math.max(0, activePlateIndex-1)); }
   if(k===']' && plates.length>1) { if(allPlatesMode) showPlate(0); else showPlate(Math.min(plates.length-1, activePlateIndex+1)); }
   if(k==='a' && plates.length>1 && !allPlatesMode) showAllPlates();
