@@ -577,11 +577,19 @@ async function parseBambu3MF(buffer, onProgress) {
   }
   console.log('[3MF] Object colors:', Object.fromEntries(objectColorMap));
 
+  // Pre-parse all model XML docs (decode + DOMParser once per file, reuse later)
+  const parsedDocs = new Map(); // modelFile → { xml, doc }
+  const decoder = new TextDecoder();
+  for (const modelFile of modelFiles) {
+    const xml = decoder.decode(unzipped[modelFile]);
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    parsedDocs.set(modelFile, { xml, doc });
+  }
+
   // Step D: Also check standard 3MF basematerials (fallback for non-Bambu files)
   const globalColorMap = new Map();
   for (const modelFile of modelFiles) {
-    const xml = new TextDecoder().decode(unzipped[modelFile]);
-    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    const { doc } = parsedDocs.get(modelFile);
     doc.querySelectorAll('*').forEach(el => {
       if (el.localName === 'base' && el.getAttribute('displaycolor')) {
         const parent = el.parentElement;
@@ -615,33 +623,37 @@ async function parseBambu3MF(buffer, onProgress) {
 
   for (let fi = 0; fi < modelFiles.length; fi++) {
     const modelFile = modelFiles[fi];
-    const xml = new TextDecoder().decode(unzipped[modelFile]);
-    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    const { doc } = parsedDocs.get(modelFile);
     const normalizedPath = '/' + modelFile;
 
     const meshEls = doc.querySelectorAll('mesh');
     for (let mi = 0; mi < meshEls.length; mi++) {
       const el = meshEls[mi];
-      const vertices = [], triangles = [];
       let meshColor = null;
 
-      // Use getElementsByTagName for speed on large meshes
+      // Pre-allocate typed arrays (avoid push loops + later conversion)
       const verts = el.getElementsByTagName('vertex');
+      const vertexArr = new Float32Array(verts.length * 3);
       for (let vi = 0; vi < verts.length; vi++) {
         const v = verts[vi];
-        vertices.push(parseFloat(v.getAttribute('x')||0), parseFloat(v.getAttribute('y')||0), parseFloat(v.getAttribute('z')||0));
+        vertexArr[vi * 3] = parseFloat(v.getAttribute('x') || 0);
+        vertexArr[vi * 3 + 1] = parseFloat(v.getAttribute('y') || 0);
+        vertexArr[vi * 3 + 2] = parseFloat(v.getAttribute('z') || 0);
       }
       const tris = el.getElementsByTagName('triangle');
+      const triArr = new Uint32Array(tris.length * 3);
       for (let ti = 0; ti < tris.length; ti++) {
         const t = tris[ti];
-        triangles.push(parseInt(t.getAttribute('v1')||0), parseInt(t.getAttribute('v2')||0), parseInt(t.getAttribute('v3')||0));
+        triArr[ti * 3] = parseInt(t.getAttribute('v1') || 0);
+        triArr[ti * 3 + 1] = parseInt(t.getAttribute('v2') || 0);
+        triArr[ti * 3 + 2] = parseInt(t.getAttribute('v3') || 0);
         if (!meshColor) {
           const pid = t.getAttribute('pid'), p1 = t.getAttribute('p1');
           if (pid && p1) meshColor = globalColorMap.get(`${pid}_${p1}`);
         }
       }
 
-      if (vertices.length > 0 && triangles.length > 0) {
+      if (vertexArr.length > 0 && triArr.length > 0) {
         const objEl = el.closest('object') || el.parentElement;
         const objId = objEl?.getAttribute('id') || '0';
         const objPid = objEl?.getAttribute('pid'), objPindex = objEl?.getAttribute('pindex');
@@ -649,7 +661,7 @@ async function parseBambu3MF(buffer, onProgress) {
 
         const key = `${normalizedPath}::${objId}`;
         if (!meshIndex.has(key)) meshIndex.set(key, []);
-        meshIndex.get(key).push({ vertices, triangles, color: meshColor });
+        meshIndex.get(key).push({ vertices: vertexArr, triangles: triArr, color: meshColor });
       }
       // Yield after each mesh to avoid blocking
       if (mi % 2 === 0) await new Promise(r => setTimeout(r, 0));
@@ -661,8 +673,7 @@ async function parseBambu3MF(buffer, onProgress) {
   await progress('Resolving components...', 65);
   // Find main model file (the one with <build> items that have components with p:path)
   const mainModelFile = modelFiles.find(f => f.includes('3dmodel.model')) || modelFiles[0];
-  const mainXml = new TextDecoder().decode(unzipped[mainModelFile]);
-  const mainDoc = new DOMParser().parseFromString(mainXml, 'application/xml');
+  const { doc: mainDoc } = parsedDocs.get(mainModelFile);
 
   // Parse components from main model (these reference external files via p:path)
   const assemblyMap = new Map(); // objectId → [{ objectid, path, transform }]
@@ -736,8 +747,7 @@ async function parseBambu3MF(buffer, onProgress) {
   function addMeshToPlate(meshData, transform, colorStr, plateId, partName, filament) {
     const geometry = createGeometryFromMesh(meshData);
     if (transform) geometry.applyMatrix4(transform);
-    geometry.computeVertexNormals();
-    geometry.computeBoundingBox();
+    // Defer computeVertexNormals — done after lay-flat in finalizeGeometry()
     const color = colorStr ? parseColor(colorStr) : new THREE.Color(0xf59e0b);
     const material = new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.5, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geometry, material);
@@ -754,7 +764,7 @@ async function parseBambu3MF(buffer, onProgress) {
   if (plateGroups.size === 0) {
     for (const modelFile of modelFiles) {
       if (modelFile === mainModelFile) continue;
-      const xml = new TextDecoder().decode(unzipped[modelFile]);
+      const { xml } = parsedDocs.get(modelFile);
       const meshes = parseModelXML(xml, globalColorMap);
       for (const meshData of meshes) {
         const extruderColor = objectColorMap.get(meshData.parentObjId) || null;
@@ -936,10 +946,11 @@ function multiplyTransforms(a, b) {
 
 function createGeometryFromMesh(meshData) {
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(meshData.vertices), 3));
-  geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(meshData.triangles), 1));
-  geometry.computeVertexNormals();
-  geometry.computeBoundingBox();
+  // meshData.vertices/triangles are already typed arrays — use directly, no copy
+  const verts = meshData.vertices instanceof Float32Array ? meshData.vertices : new Float32Array(meshData.vertices);
+  const tris = meshData.triangles instanceof Uint32Array ? meshData.triangles : new Uint32Array(meshData.triangles);
+  geometry.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+  geometry.setIndex(new THREE.BufferAttribute(tris, 1));
   return geometry;
 }
 
@@ -1027,6 +1038,9 @@ async function processModel(object, fileName) {
   // Auto-layout all parts onto beds
   showLoading('Laying out plates...', 95);
   await autoLayoutPlates();
+  // Finalize geometry after layout (normals + bounding boxes deferred from parsing)
+  showLoading('Finalizing...', 98);
+  await finalizeGeometry();
   plates.forEach(p => { p.colors = getColors(p.group); });
   scene.add(modelGroup);
   activePlateIndex = 0;
@@ -1046,11 +1060,12 @@ function layFlatMesh(mesh) {
   const triCount = idx ? idx.count / 3 : pos.count / 3;
   if (triCount < 1) return;
 
-  // 1. Collect all world-space vertices and face data
+  // 1. Collect all world-space vertices and face data (pre-allocated typed array)
   const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3();
   const edge1 = new THREE.Vector3(), edge2 = new THREE.Vector3(), normal = new THREE.Vector3();
-  const worldVerts = []; // all world-space vertices (flat: x,y,z,x,y,z,...)
-  const faces = [];      // { nx, ny, nz, area }
+  const nVerts = triCount * 3;
+  const worldVerts = new Float32Array(nVerts * 3);
+  const faces = [];
 
   for (let i = 0; i < triCount; i++) {
     let ia, ib, ic;
@@ -1059,7 +1074,10 @@ function layFlatMesh(mesh) {
     vA.fromBufferAttribute(pos, ia); vA.applyMatrix4(mesh.matrixWorld);
     vB.fromBufferAttribute(pos, ib); vB.applyMatrix4(mesh.matrixWorld);
     vC.fromBufferAttribute(pos, ic); vC.applyMatrix4(mesh.matrixWorld);
-    worldVerts.push(vA.x, vA.y, vA.z, vB.x, vB.y, vB.z, vC.x, vC.y, vC.z);
+    const base = i * 9;
+    worldVerts[base] = vA.x; worldVerts[base+1] = vA.y; worldVerts[base+2] = vA.z;
+    worldVerts[base+3] = vB.x; worldVerts[base+4] = vB.y; worldVerts[base+5] = vB.z;
+    worldVerts[base+6] = vC.x; worldVerts[base+7] = vC.y; worldVerts[base+8] = vC.z;
     edge1.subVectors(vB, vA); edge2.subVectors(vC, vA);
     normal.crossVectors(edge1, edge2);
     const area = normal.length() * 0.5;
@@ -1092,8 +1110,11 @@ function layFlatMesh(mesh) {
   }
   if (clusters.length === 0) return;
 
-  // 3. Evaluate ALL face clusters × 2 orientations + 6 principal axes
+  // 3. Evaluate top face clusters × 2 orientations + 6 principal axes
   clusters.sort((a, b) => b.totalArea - a.totalArea);
+  // Cap clusters to top 20 by area — diminishing returns beyond that
+  const maxClusters = 20;
+  const topClusters = clusters.slice(0, maxClusters);
   const down = new THREE.Vector3(0, -1, 0);
   const up = new THREE.Vector3(0, 1, 0);
 
@@ -1113,11 +1134,11 @@ function layFlatMesh(mesh) {
     return q;
   }
 
-  // Every cluster, both orientations (no artificial penalty)
-  for (const cl of clusters) {
+  // Top clusters, both orientations
+  for (const cl of topClusters) {
     const faceN = new THREE.Vector3(cl.nx, cl.ny, cl.nz);
-    evalCandidates.push({ q: makeQuat(faceN, down) }); // this face on bed
-    evalCandidates.push({ q: makeQuat(faceN, up) });   // opposite face on bed
+    evalCandidates.push({ q: makeQuat(faceN, down) });
+    evalCandidates.push({ q: makeQuat(faceN, up) });
   }
 
   // 6 principal axes
@@ -1160,8 +1181,7 @@ function layFlatMesh(mesh) {
   const m4 = new THREE.Matrix4().multiplyMatrices(fromOrigin, rotate).multiply(toOrigin);
 
   geo.applyMatrix4(m4);
-  geo.computeVertexNormals();
-  geo.computeBoundingBox();
+  geo.computeBoundingBox(); // needed for layout; normals deferred to finalizeGeometry()
 
   mesh.position.set(0, 0, 0);
   mesh.rotation.set(0, 0, 0);
@@ -1175,15 +1195,20 @@ function evaluateOrientation(worldVerts, faces, pivot, quat) {
   const totalTris = nVerts / 3;
   const v = new THREE.Vector3();
 
-  // Rotate all vertices
-  const ry = new Float32Array(nVerts); // rotated Y values
+  // Rotate all vertices ONCE — store x, y, z in flat typed arrays
+  const rx = new Float32Array(nVerts);
+  const ry = new Float32Array(nVerts);
+  const rz = new Float32Array(nVerts);
   let minY = Infinity, maxY = -Infinity;
+  let xMin = Infinity, xMax = -Infinity, zMin = Infinity, zMax = -Infinity;
+
   for (let i = 0; i < nVerts; i++) {
     v.set(worldVerts[i * 3], worldVerts[i * 3 + 1], worldVerts[i * 3 + 2]);
     v.sub(pivot); v.applyQuaternion(quat); v.add(pivot);
-    ry[i] = v.y;
-    if (v.y < minY) minY = v.y;
-    if (v.y > maxY) maxY = v.y;
+    rx[i] = v.x; ry[i] = v.y; rz[i] = v.z;
+    if (v.y < minY) minY = v.y; if (v.y > maxY) maxY = v.y;
+    if (v.x < xMin) xMin = v.x; if (v.x > xMax) xMax = v.x;
+    if (v.z < zMin) zMin = v.z; if (v.z > zMax) zMax = v.z;
   }
 
   const totalH = maxY - minY;
@@ -1191,46 +1216,33 @@ function evaluateOrientation(worldVerts, faces, pivot, quat) {
 
   const bedTol = Math.min(totalH * 0.03, 2.0) + 0.3; // adaptive tolerance
 
-  // Compute ACTUAL bed contact area: sum area of triangles whose all 3 verts are near bed
+  // Compute ACTUAL bed contact area using rotated coords (no re-rotation needed)
   let bedContactArea = 0;
-  let nearBedArea = 0; // at least 1 vert near bed
-  const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3();
-  const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), n = new THREE.Vector3();
+  let nearBedArea = 0;
+  const e1x = new Float32Array(3), e2x = new Float32Array(3);
 
   for (let t = 0; t < totalTris; t++) {
-    const y0 = ry[t * 3] - minY;
-    const y1 = ry[t * 3 + 1] - minY;
-    const y2 = ry[t * 3 + 2] - minY;
+    const a = t * 3, b = a + 1, c = a + 2;
+    const y0 = ry[a] - minY, y1 = ry[b] - minY, y2 = ry[c] - minY;
 
-    // Compute triangle area
-    const i0 = t * 3, i1 = t * 3 + 1, i2 = t * 3 + 2;
-    vA.set(worldVerts[i0*3], worldVerts[i0*3+1], worldVerts[i0*3+2]);
-    vB.set(worldVerts[i1*3], worldVerts[i1*3+1], worldVerts[i1*3+2]);
-    vC.set(worldVerts[i2*3], worldVerts[i2*3+1], worldVerts[i2*3+2]);
-    e1.subVectors(vB, vA); e2.subVectors(vC, vA);
-    const triArea = n.crossVectors(e1, e2).length() * 0.5;
+    // Triangle area from rotated positions (cross product magnitude / 2)
+    e1x[0] = rx[b] - rx[a]; e1x[1] = ry[b] - ry[a]; e1x[2] = rz[b] - rz[a];
+    e2x[0] = rx[c] - rx[a]; e2x[1] = ry[c] - ry[a]; e2x[2] = rz[c] - rz[a];
+    const cx = e1x[1]*e2x[2] - e1x[2]*e2x[1];
+    const cy = e1x[2]*e2x[0] - e1x[0]*e2x[2];
+    const cz = e1x[0]*e2x[1] - e1x[1]*e2x[0];
+    const triArea = Math.sqrt(cx*cx + cy*cy + cz*cz) * 0.5;
 
     if (y0 <= bedTol && y1 <= bedTol && y2 <= bedTol) {
-      bedContactArea += triArea;  // fully on bed
+      bedContactArea += triArea;
     }
-    if (Math.min(y0, y1, y2) <= bedTol) {
+    if (y0 <= bedTol || y1 <= bedTol || y2 <= bedTol) {
       nearBedArea += triArea;
     }
   }
 
-  // Column support analysis (16×16 for better resolution)
+  // Column support analysis (16×16 grid)
   const gridRes = 16;
-  const rx = new Float32Array(nVerts);
-  const rz = new Float32Array(nVerts);
-  let xMin = Infinity, xMax = -Infinity, zMin = Infinity, zMax = -Infinity;
-
-  for (let i = 0; i < nVerts; i++) {
-    v.set(worldVerts[i*3], worldVerts[i*3+1], worldVerts[i*3+2]);
-    v.sub(pivot); v.applyQuaternion(quat); v.add(pivot);
-    rx[i] = v.x; rz[i] = v.z;
-    if (v.x < xMin) xMin = v.x; if (v.x > xMax) xMax = v.x;
-    if (v.z < zMin) zMin = v.z; if (v.z > zMax) zMax = v.z;
-  }
   const xSpan = xMax - xMin || 1, zSpan = zMax - zMin || 1;
 
   const cellHasGeo = new Uint8Array(gridRes * gridRes);
@@ -1394,6 +1406,21 @@ function shelfPack(items, bedW, bedD, gap) {
   }
 
   return { placed, overflow };
+}
+
+// Finalize geometry: compute normals + bounding boxes after lay-flat is done
+async function finalizeGeometry() {
+  let count = 0;
+  for (const plate of plates) {
+    for (const c of plate.group.children) {
+      if (c.isMesh && c.geometry) {
+        c.geometry.computeVertexNormals();
+        c.geometry.computeBoundingBox();
+        count++;
+        if (count % 4 === 0) await new Promise(r => setTimeout(r, 0));
+      }
+    }
+  }
 }
 
 // Run auto-layout: lay flat + pack meshes onto bed
