@@ -1555,14 +1555,116 @@ function selectMesh(mesh) {
 }
 
 // ─── Plate / Camera ───
+let allPlatesMode = false;
+const savedPlatePositions = new Map(); // plate index → original group position
+
 function showPlate(index) {
+  // Restore original positions if coming out of all-plates mode
+  if (allPlatesMode) {
+    plates.forEach((p, i) => {
+      const saved = savedPlatePositions.get(i);
+      if (saved) p.group.position.copy(saved);
+    });
+    if (bedGroup) { bedGroup.visible = bedVisible; bedGroup.position.x = 0; }
+    allPlatesMode = false;
+  }
   plates.forEach((p, i) => { p.group.visible = (i === index); });
   activePlateIndex = index;
-  document.querySelectorAll('.plate-item').forEach((el, i) => el.classList.toggle('active', i === index));
+  document.querySelectorAll('.plate-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.plate-item')[index + 1]?.classList.add('active'); // +1 for "All" item
   selectMesh(null);
   updateObjectsPanel(plates[index]);
   fitCameraToGroup(plates[index].group);
   updateModelInfo(plates[index]);
+}
+
+function showAllPlates() {
+  if (plates.length <= 1) return;
+  allPlatesMode = true;
+  selectMesh(null);
+
+  // Save original positions and lay out in a grid
+  const gap = 40;
+  const cols = Math.ceil(Math.sqrt(plates.length));
+  const rows = Math.ceil(plates.length / cols);
+  const cellW = BED_W + gap;
+  const cellD = BED_D + gap;
+  const startX = -(cols * cellW - gap) / 2 + BED_W / 2;
+  const startZ = -(rows * cellD - gap) / 2 + BED_D / 2;
+
+  plates.forEach((p, i) => {
+    savedPlatePositions.set(i, p.group.position.clone());
+    p.group.visible = true;
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    p.group.position.x = startX + col * cellW;
+    p.group.position.z = startZ + row * cellD;
+  });
+
+  // Hide bed in all-plates mode (would need cloning per plate)
+  if (bedGroup) bedGroup.visible = false;
+
+  activePlateIndex = -1; // -1 = all plates
+  document.querySelectorAll('.plate-item').forEach(el => el.classList.remove('active'));
+  document.querySelector('.plate-item')?.classList.add('active'); // first item = "All"
+
+  // Show combined objects panel
+  updateObjectsPanelAll();
+
+  // Fit camera to entire scene
+  fitCameraToGroup(modelGroup);
+  updateModelInfoAll();
+}
+
+function updateObjectsPanelAll() {
+  objectList.innerHTML = '';
+  const allMeshes = [];
+  plates.forEach((plate, pi) => {
+    // Add plate header
+    const header = document.createElement('div');
+    header.className = 'text-[10px] font-mono font-semibold uppercase tracking-wider text-zinc-500 px-3 pt-3 pb-1';
+    header.textContent = plate.name;
+    objectList.appendChild(header);
+
+    plate.group.children.forEach((c, i) => {
+      if (!c.isMesh) return;
+      c.userData.objIndex = i;
+      allMeshes.push(c);
+      const row = document.createElement('div');
+      row.className = 'obj-item flex items-center gap-2 px-2 py-1.5 mx-1 rounded cursor-pointer hover:bg-zinc-800/50 transition-colors';
+      row.dataset.idx = i;
+      row.dataset.plate = pi;
+      const hex = c.material?.color ? '#' + c.material.color.getHexString() : '#f59e0b';
+      const name = c.name || `Object ${i + 1}`;
+      const fil = c.userData.filament;
+      const matLabel = fil ? `<span class="text-[10px] font-mono text-zinc-500 shrink-0" title="${fil.name || ''}">${fil.type}</span>` : '';
+      row.innerHTML = `
+        <input type="color" value="${hex}" class="obj-color w-5 h-5 rounded border border-zinc-600 cursor-pointer bg-transparent p-0 shrink-0" title="Change color" style="appearance:none;-webkit-appearance:none;">
+        <span class="text-xs font-mono text-zinc-300 truncate flex-1" title="${name}">${name}</span>
+        ${matLabel}
+        <span class="text-[10px] font-mono text-zinc-600 shrink-0 obj-weight"></span>
+      `;
+      row.querySelector('.obj-color').addEventListener('input', (e) => {
+        const col = new THREE.Color(e.target.value);
+        c.material.color.copy(col);
+        c.userData.originalColor = col.clone();
+      });
+      row.addEventListener('click', (e) => {
+        if (e.target.classList.contains('obj-color')) return;
+        selectMesh(c);
+      });
+      objectList.appendChild(row);
+    });
+  });
+  updateWeightInfo(allMeshes);
+}
+
+function updateModelInfoAll() {
+  let tris = 0, meshCount = 0;
+  plates.forEach(p => {
+    p.group.traverse(c => { if(c.isMesh && c.geometry) { meshCount++; const idx = c.geometry.index; tris += idx ? idx.count/3 : (c.geometry.attributes.position?.count||0)/3; }});
+  });
+  modelInfo.innerHTML = `<div><span class="text-zinc-100">Objects:</span> ${meshCount}</div><div><span class="text-zinc-100">Triangles:</span> ${Math.round(tris).toLocaleString()}</div><div><span class="text-zinc-100">Plates:</span> ${plates.length}</div>`;
 }
 
 function fitCameraToGroup(group) {
@@ -1616,6 +1718,13 @@ function updateUI(fileName) {
 
   plateList.innerHTML = '';
   if (plates.length > 1) {
+    // "All Plates" item
+    const allItem = document.createElement('div');
+    allItem.className = 'plate-item px-3 py-2.5 cursor-pointer flex items-center gap-2 text-sm font-mono text-zinc-300';
+    allItem.innerHTML = `<div class="flex-1 min-w-0"><div class="truncate">All Plates</div><div class="text-[10px] text-zinc-500 mt-0.5">${plates.length} plates</div></div>`;
+    allItem.onclick = () => showAllPlates();
+    plateList.appendChild(allItem);
+
     plates.forEach((plate, i) => {
       const item = document.createElement('div');
       item.className = 'plate-item px-3 py-2.5 cursor-pointer flex items-center gap-2 text-sm font-mono text-zinc-300' + (i === 0 ? ' active' : '');
@@ -1784,9 +1893,13 @@ canvas.addEventListener('pointerup', (e) => {
   raycaster.setFromCamera(mouse, camera);
 
   if (!plates.length) return;
-  const plate = plates[activePlateIndex];
   const meshes = [];
-  plate.group.traverse(c => { if (c.isMesh) meshes.push(c); });
+  if (allPlatesMode) {
+    plates.forEach(p => p.group.traverse(c => { if (c.isMesh) meshes.push(c); }));
+  } else {
+    const plate = plates[activePlateIndex];
+    if (plate) plate.group.traverse(c => { if (c.isMesh) meshes.push(c); });
+  }
   const hits = raycaster.intersectObjects(meshes, false);
   selectMesh(hits.length > 0 ? hits[0].object : null);
 });
@@ -1805,7 +1918,7 @@ openBtn.onclick = () => fileInput.click();
 fileInput.onchange = e => { const f = e.target.files[0]; if(f) load3MF(f); fileInput.value = ''; };
 
 document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setCameraView(b.dataset.view));
-document.getElementById('btn-reset').onclick = () => { if(plates.length) fitCameraToGroup(plates[activePlateIndex].group); };
+document.getElementById('btn-reset').onclick = () => { if(plates.length) fitCameraToGroup(allPlatesMode ? modelGroup : plates[activePlateIndex].group); };
 
 document.getElementById('btn-layflat').onclick = function() {
   if (!modelGroup || plates.length === 0) return;
@@ -1892,8 +2005,9 @@ document.addEventListener('keydown', e => {
   if(k==='4') setCameraView('right');
   if(k==='5') setCameraView('top');
   if(k==='6') setCameraView('bottom');
-  if(k==='[' && plates.length>1) showPlate(Math.max(0, activePlateIndex-1));
-  if(k===']' && plates.length>1) showPlate(Math.min(plates.length-1, activePlateIndex+1));
+  if(k==='[' && plates.length>1) { if(allPlatesMode) showPlate(plates.length-1); else showPlate(Math.max(0, activePlateIndex-1)); }
+  if(k===']' && plates.length>1) { if(allPlatesMode) showPlate(0); else showPlate(Math.min(plates.length-1, activePlateIndex+1)); }
+  if(k==='a' && plates.length>1 && !allPlatesMode) showAllPlates();
 });
 
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
