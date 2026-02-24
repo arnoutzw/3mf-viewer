@@ -71,7 +71,7 @@
 </head>
 <body class="bg-zinc-950 text-zinc-100 font-sans">
 
-<!-- ââ Drop Zone ââ -->
+<!-- ── Drop Zone ── -->
 <div id="drop-zone" class="fixed inset-0 z-[1000] flex flex-col items-center justify-center bg-zinc-950/[.97] backdrop-blur-sm">
   <div class="drop-ring w-44 h-44 border-[3px] border-dashed border-zinc-700 rounded-full flex items-center justify-center mb-6" style="transition: all 0.3s">
     <svg class="w-14 h-14 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -84,7 +84,7 @@
   <input type="file" id="file-input" accept=".3mf,.stl,.obj,.step,.stp,.dxf" hidden>
 </div>
 
-<!-- ââ Loading Overlay ââ -->
+<!-- ── Loading Overlay ── -->
 <div id="loading-overlay" class="fixed inset-0 bg-black backdrop-blur-sm z-[2000] hidden items-center justify-center flex-col">
   <div class="spinner w-11 h-11 border-[3px] border-zinc-700 border-t-amber-500 rounded-full mb-4"></div>
   <div id="loading-text" class="text-sm text-zinc-500 font-mono">Loading model...</div>
@@ -93,10 +93,10 @@
   </div>
 </div>
 
-<!-- ââ Canvas ââ -->
+<!-- ── Canvas ── -->
 <canvas id="viewer-canvas"></canvas>
 
-<!-- ââ Top Bar ââ -->
+<!-- ── Top Bar ── -->
 <div id="top-bar" class="fixed top-4 left-4 right-4 flex items-center justify-between z-[100] pointer-events-none">
   <div class="pointer-events-auto model-name-hidden bg-zinc-900 border border-zinc-700 rounded-lg px-3.5 py-2 flex items-center gap-2 max-w-[380px]" id="model-name">
     <svg class="w-4 h-4 text-amber-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 4.5v11L12 22l-9-4.5v-11z"/><path d="M12 22V12"/><path d="M3 6.5l9 5"/><path d="M21 6.5l-9 5"/></svg>
@@ -110,13 +110,13 @@
   </div>
 </div>
 
-<!-- ââ Plate Sidebar ââ -->
+<!-- ── Plate Sidebar ── -->
 <div id="plate-sidebar" class="fixed top-[60px] left-4 bottom-[76px] w-[210px] bg-zinc-900 border border-zinc-700 rounded-lg overflow-y-auto z-[100] hidden">
   <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-zinc-500 px-3 pt-3 pb-1.5">Plates</div>
   <div id="plate-list"></div>
 </div>
 
-<!-- ââ Objects Panel (right sidebar) ââ -->
+<!-- ── Objects Panel (right sidebar) ── -->
 <div id="objects-panel" class="fixed top-[60px] right-4 bottom-[76px] w-[240px] bg-zinc-900 border border-zinc-700 rounded-lg z-[100] hidden flex flex-col overflow-hidden">
   <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-zinc-500 px-3 pt-3 pb-1.5">Objects</div>
   <div id="object-list" class="flex-1 overflow-y-auto px-1"></div>
@@ -151,24 +151,24 @@
   </div>
 </div>
 
-<!-- ââ FPS Counter ââ -->
+<!-- ── FPS Counter ── -->
 <div id="fps-counter" class="fixed bottom-5 left-5 text-sm font-mono font-bold text-zinc-300 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-md z-[100] pointer-events-none">0 FPS</div>
 
-<!-- ââ Model Info ââ -->
+<!-- ── Model Info ── -->
 
-<!-- ââ Light Controls Popup ââ -->
+<!-- ── Light Controls Popup ── -->
 <div id="light-popup" class="fixed bottom-20 left-1/2 -translate-x-1/2 hidden bg-zinc-900 border border-zinc-700 rounded-xl p-4 z-[110] w-64 shadow-xl">
   <div class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider mb-3">Light Position</div>
   <div class="flex flex-col gap-3">
     <div class="flex items-center gap-2">
       <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-10 shrink-0">Angle</label>
       <input type="range" id="light-azimuth" min="0" max="360" value="225" class="flex-1 accent-amber-500 h-1 cursor-pointer">
-      <span id="light-azimuth-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">225Â°</span>
+      <span id="light-azimuth-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">225°</span>
     </div>
     <div class="flex items-center gap-2">
       <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-10 shrink-0">Height</label>
       <input type="range" id="light-elevation" min="10" max="85" value="60" class="flex-1 accent-amber-500 h-1 cursor-pointer">
-      <span id="light-elevation-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">60Â°</span>
+      <span id="light-elevation-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">60°</span>
     </div>
     <div class="flex items-center gap-2">
       <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-10 shrink-0">Bright</label>
@@ -178,7 +178,7 @@
   </div>
 </div>
 
-<!-- ââ DXF Thickness Popup ââ -->
+<!-- ── DXF Thickness Popup ── -->
 <div id="dxf-thickness-popup" class="fixed inset-0 z-[1100] hidden flex items-center justify-center bg-black/60 backdrop-blur-sm">
   <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-xl">
     <div class="text-sm font-mono font-bold text-amber-500 mb-1">DXF Extrusion</div>
@@ -201,7 +201,7 @@
   </div>
 </div>
 
-<!-- ââ Bottom Toolbar ââ -->
+<!-- ── Bottom Toolbar ── -->
 <div id="bottom-bar" class="fixed bottom-5 left-1/2 -translate-x-1/2 hidden items-center gap-0.5 bg-zinc-900 border border-zinc-700 rounded-full px-2.5 py-1.5 z-[100]">
   <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-reset">
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Reset</span>
@@ -296,7 +296,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import earcut from 'earcut';
 
-// âââ State âââ
+// ─── State ───
 const BED_W = 256, BED_D = 256; // Bambu X1C build plate (mm)
 const BED_PAD = 5;              // keep 5mm from edges
 let scene, camera, renderer, controls, composer;
@@ -318,7 +318,7 @@ let faceHighlightMesh = null;
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-// Material density database (g/cmÂ³)
+// Material density database (g/cm³)
 const MATERIALS = [
   { name: 'PLA',           density: 1.24 },
   { name: 'PLA+',          density: 1.24 },
@@ -343,7 +343,7 @@ let nozzleDia = 0.4;       // nozzle diameter mm
 let topBottomLayers = 4;   // top/bottom solid layers
 let layerHeight = 0.2;     // mm
 
-// âââ DOM âââ
+// ─── DOM ───
 const canvas = document.getElementById('viewer-canvas');
 const dropZone = document.getElementById('drop-zone');
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -360,7 +360,7 @@ const bottomBar = document.getElementById('bottom-bar');
 const openBtn = document.getElementById('open-btn');
 const fileInput = document.getElementById('file-input');
 
-// âââ FDM Plastic Material âââ
+// ─── FDM Plastic Material ───
 // Procedural normal map simulating FDM layer lines (~0.2mm layers)
 let fdmNormalMap = null;
 let fdmRoughnessMap = null;
@@ -380,7 +380,7 @@ function createFDMTextures() {
   const rd = rImg.data;
 
   // FDM layer lines: pixel height per layer scales with layerHeight
-  // Base: 32px at 0.20mm (doubled res â doubled base)
+  // Base: 32px at 0.20mm (doubled res → doubled base)
   const layerH = Math.max(8, Math.round(32 * (layerHeight / 0.20)));
 
   for (let y = 0; y < h; y++) {
@@ -454,7 +454,7 @@ function createFDMMaterial(color) {
   if (!fdmNormalMap) createFDMTextures();
 
   if (graphicsQuality === 'performance') {
-    // Performance: basic MeshStandardMaterial â no clearcoat/sheen/IOR overhead
+    // Performance: basic MeshStandardMaterial — no clearcoat/sheen/IOR overhead
     return new THREE.MeshStandardMaterial({
       color,
       metalness: 0.0,
@@ -518,7 +518,7 @@ function updateFDMForLayerHeight() {
   }
 }
 
-// âââ Init âââ
+// ─── Init ───
 function initScene() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x111111); // near-black, matching loading screen
@@ -535,15 +535,15 @@ function initScene() {
   renderer.toneMappingExposure = 1.0;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-  // ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-  // ââ Photorealistic PBR Environment Map (studio HDRI emulation) ââ
-  // ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ══════════════════════════════════════════════════════════════
+  // ── Photorealistic PBR Environment Map (studio HDRI emulation) ──
+  // ══════════════════════════════════════════════════════════════
   const pmrem = new THREE.PMREMGenerator(renderer);
   pmrem.compileEquirectangularShader();
   const envScene = new THREE.Scene();
 
   // Use gradient background sphere for smooth ambient fill
-  // Dark studio with warm floor bounce â like a product photography setup
+  // Dark studio with warm floor bounce — like a product photography setup
   const bgGeo = new THREE.SphereGeometry(50, 64, 32);
   const bgMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
@@ -563,7 +563,7 @@ function initScene() {
   });
   envScene.add(new THREE.Mesh(bgGeo, bgMat));
 
-  // Key light â large soft overhead panel (warm white)
+  // Key light — large soft overhead panel (warm white)
   const keyPanel = new THREE.Mesh(
     new THREE.PlaneGeometry(30, 30),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.4, 1.3), side: THREE.DoubleSide })
@@ -572,7 +572,7 @@ function initScene() {
   keyPanel.lookAt(0, 0, 0);
   envScene.add(keyPanel);
 
-  // Rim light â narrow bright strip behind-right (gives edge definition)
+  // Rim light — narrow bright strip behind-right (gives edge definition)
   const rimPanel = new THREE.Mesh(
     new THREE.PlaneGeometry(6, 25),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(2.0, 2.0, 2.2), side: THREE.DoubleSide })
@@ -581,7 +581,7 @@ function initScene() {
   rimPanel.lookAt(0, 0, 0);
   envScene.add(rimPanel);
 
-  // Fill light â large soft panel from lower-left (cool blue tint)
+  // Fill light — large soft panel from lower-left (cool blue tint)
   const fillPanel = new THREE.Mesh(
     new THREE.PlaneGeometry(25, 20),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 0.5, 0.7), side: THREE.DoubleSide })
@@ -599,7 +599,7 @@ function initScene() {
   bouncePanel.lookAt(0, 0, 0);
   envScene.add(bouncePanel);
 
-  // Small bright accent â rear-left for secondary edge highlight
+  // Small bright accent — rear-left for secondary edge highlight
   const accentPanel = new THREE.Mesh(
     new THREE.PlaneGeometry(4, 12),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 1.3, 1.5), side: THREE.DoubleSide })
@@ -612,11 +612,11 @@ function initScene() {
   scene.environment = envMap;
   pmrem.dispose();
 
-  // ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-  // ââ Lighting rig â cinematic 3-point + hemisphere ââ
-  // ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ══════════════════════════════════════════════════════════════
+  // ── Lighting rig — cinematic 3-point + hemisphere ──
+  // ══════════════════════════════════════════════════════════════
 
-  // Very low ambient â let IBL do the work
+  // Very low ambient — let IBL do the work
   scene.add(new THREE.AmbientLight(0xffffff, 0.12));
 
   // Key light: warm directional with high-res shadows
@@ -648,13 +648,13 @@ function initScene() {
   // Hemisphere: very subtle ground-bounce fill
   scene.add(new THREE.HemisphereLight(0xd0d8e8, 0x3a3228, 0.1));
 
-  // ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-  // ââ Post-Processing Pipeline ââ
-  // ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ══════════════════════════════════════════════════════════════
+  // ── Post-Processing Pipeline ──
+  // ══════════════════════════════════════════════════════════════
   composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
 
-  // Screen-space Ambient Occlusion â adds contact shadows in crevices
+  // Screen-space Ambient Occlusion — adds contact shadows in crevices
   try {
     ssaoPassRef = new SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
     ssaoPassRef.kernelRadius = 12;
@@ -664,7 +664,7 @@ function initScene() {
     composer.addPass(ssaoPassRef);
   } catch(e) { console.warn('SSAO not available, skipping AO:', e); }
 
-  // Subtle bloom â just enough for specular highlights to glow softly
+  // Subtle bloom — just enough for specular highlights to glow softly
   bloomPassRef = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
     0.15,   // strength (very subtle)
@@ -727,7 +727,7 @@ function decodeBedGeometry() {
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  // STL uses X/Y for plate surface, Z for height â rotate so Y is up
+  // STL uses X/Y for plate surface, Z for height — rotate so Y is up
   geometry.rotateX(-Math.PI / 2);
   geometry.computeBoundingBox();
   const box = geometry.boundingBox;
@@ -742,7 +742,7 @@ function decodeBedGeometry() {
 function createBed(w, d) {
   bedGroup = new THREE.Group();
 
-  // ââ Procedural PEI build plate texture ââ
+  // ── Procedural PEI build plate texture ──
   // Simulates the stippled/brushed texture of a real Bambu textured PEI sheet
   const bedTexW = 512, bedTexH = 512;
 
@@ -817,7 +817,7 @@ function createBed(w, d) {
     specularIntensity: 0.3,
   });
 
-  // Decode embedded buildplate geometry (no fetch needed â works offline & file://)
+  // Decode embedded buildplate geometry (no fetch needed — works offline & file://)
   const bedGeo = decodeBedGeometry();
 
   // Generate UVs for bed so textures map correctly
@@ -837,7 +837,7 @@ function createBed(w, d) {
   plateMesh.receiveShadow = true;
   bedGroup.add(plateMesh);
 
-  // Grid overlay â painted white lines
+  // Grid overlay — painted white lines
   const gridMajor = 0x808080;  // major grid lines
   const gridMinor = 0x5a5a5a;  // minor grid lines
   const grid = new THREE.GridHelper(Math.max(w, d), Math.max(w, d) / 10, gridMajor, gridMinor);
@@ -850,9 +850,9 @@ function createBed(w, d) {
   scene.add(bedGroup);
 }
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// ââ Graphics Quality Tiers ââ
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
+// ── Graphics Quality Tiers ──
+// ══════════════════════════════════════════════════════════════
 // Ultra:       SSAO + Bloom + Vignette + SMAA, 4K shadows, MeshPhysicalMaterial w/ clearcoat+sheen, DPR 2
 // High:        Bloom + Vignette + SMAA (no SSAO), 2K shadows, MeshPhysicalMaterial (no clearcoat/sheen), DPR 2
 // Performance: No post-processing, 1K shadows, MeshStandardMaterial (no PBR extras), DPR 1, built-in AA
@@ -860,14 +860,14 @@ function createBed(w, d) {
 function applyGraphicsQuality(quality) {
   graphicsQuality = quality;
 
-  // ââ Post-processing passes ââ
+  // ── Post-processing passes ──
   if (ssaoPassRef)     ssaoPassRef.enabled     = (quality === 'ultra');
   if (bloomPassRef)    bloomPassRef.enabled     = (quality !== 'performance');
   if (vignettePassRef) vignettePassRef.enabled  = (quality !== 'performance');
   if (smaaPassRef)     smaaPassRef.enabled      = (quality !== 'performance');
   if (outputPassRef)   outputPassRef.enabled    = (quality !== 'performance');
 
-  // ââ Shadow map resolution ââ
+  // ── Shadow map resolution ──
   if (dirLightRef && dirLightRef.shadow) {
     const shadowRes = quality === 'ultra' ? 4096 : quality === 'high' ? 2048 : 1024;
     dirLightRef.shadow.mapSize.set(shadowRes, shadowRes);
@@ -877,13 +877,13 @@ function applyGraphicsQuality(quality) {
     }
   }
 
-  // ââ Pixel ratio ââ
+  // ── Pixel ratio ──
   const maxDPR = quality === 'performance' ? 1 : 2;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxDPR));
   renderer.setSize(window.innerWidth, window.innerHeight);
   if (composer) composer.setSize(window.innerWidth, window.innerHeight);
 
-  // ââ Rebuild all part materials for the new tier ââ
+  // ── Rebuild all part materials for the new tier ──
   for (const plate of plates) {
     for (const c of plate.group.children) {
       if (c.isMesh && c.userData.originalColor) {
@@ -896,7 +896,7 @@ function applyGraphicsQuality(quality) {
     }
   }
 
-  // ââ Update UI label ââ
+  // ── Update UI label ──
   const labelEl = document.getElementById('quality-label');
   if (labelEl) {
     const labels = { ultra: 'Ultra', high: 'High', performance: 'Perf' };
@@ -925,7 +925,7 @@ function animate() {
   if (now - fpsLastTime >= 1000) {
     const fps = fpsFrames;
     const qLabel = graphicsQuality === 'ultra' ? 'U' : graphicsQuality === 'high' ? 'H' : 'P';
-    fpsEl.textContent = fps + ' FPS Â· ' + qLabel;
+    fpsEl.textContent = fps + ' FPS · ' + qLabel;
     fpsFrames = 0;
     fpsLastTime = now;
 
@@ -939,10 +939,10 @@ function animate() {
           lowFpsStreak = 0;
           if (graphicsQuality === 'ultra') {
             applyGraphicsQuality('high');
-            console.log(`Auto quality: Ultra â High (FPS was ${fps})`);
+            console.log(`Auto quality: Ultra → High (FPS was ${fps})`);
           } else if (graphicsQuality === 'high') {
             applyGraphicsQuality('performance');
-            console.log(`Auto quality: High â Performance (FPS was ${fps})`);
+            console.log(`Auto quality: High → Performance (FPS was ${fps})`);
           }
         }
       // Upgrade check
@@ -953,10 +953,10 @@ function animate() {
           highFpsStreak = 0;
           if (graphicsQuality === 'performance') {
             applyGraphicsQuality('high');
-            console.log(`Auto quality: Performance â High (FPS was ${fps})`);
+            console.log(`Auto quality: Performance → High (FPS was ${fps})`);
           } else if (graphicsQuality === 'high') {
             applyGraphicsQuality('ultra');
-            console.log(`Auto quality: High â Ultra (FPS was ${fps})`);
+            console.log(`Auto quality: High → Ultra (FPS was ${fps})`);
           }
         }
       } else {
@@ -974,7 +974,7 @@ function onResize() {
   if (composer) composer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// âââ 3MF Loading (custom Bambu-aware parser) âââ
+// ─── 3MF Loading (custom Bambu-aware parser) ───
 async function load3MF(file) {
   showLoading('Reading ' + file.name + '...', 0);
   dropZone.classList.add('hidden');
@@ -985,7 +985,7 @@ async function load3MF(file) {
 
     let object;
     const onProgress = (msg, pct) => showLoading(msg, pct);
-    // Always try custom Bambu parser first â it handles Bambu-specific
+    // Always try custom Bambu parser first — it handles Bambu-specific
     // displaycolor, partnumber plates, and component assemblies correctly.
     // Three's ThreeMFLoader silently drops these, defaulting all colors.
     try {
@@ -1229,7 +1229,7 @@ async function loadDXF(file) {
     const object = new THREE.Group();
     const defaultColor = new THREE.Color(0xf59e0b);
 
-    // Pre-compute rotation matrix once (DXF XY + extrude Z â world XZ + Y up)
+    // Pre-compute rotation matrix once (DXF XY + extrude Z → world XZ + Y up)
     const rotMatrix = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
 
     // Convert open path into a thin closed shape (for lines, arcs, open polylines)
@@ -1288,7 +1288,7 @@ async function loadDXF(file) {
       }
     }
 
-    // ââ Phase 1: Convert all entities â THREE.Shape (fast, no heavy geometry) ââ
+    // ── Phase 1: Convert all entities → THREE.Shape (fast, no heavy geometry) ──
     showLoading('Building shapes 0 / ' + totalEntities + '...', 2);
     await yieldToUI();
     // { shape, type:'extrude', bbox, isCircle, layer } or { positions, type:'face' }
@@ -1441,7 +1441,7 @@ async function loadDXF(file) {
       }
     }
 
-    // ââ Phase 1b: Detect holes (small circles fully inside larger shapes) ââ
+    // ── Phase 1b: Detect holes (small circles fully inside larger shapes) ──
     showLoading('Detecting holes...', 11);
     await yieldToUI();
     const extrudeShapes = shapes.filter(s => s.type === 'extrude');
@@ -1473,7 +1473,7 @@ async function loadDXF(file) {
 
     if (shapes.length === 0) throw new Error('No supported entities found in DXF');
 
-    // ââ Manual extrusion: bypasses THREE.ExtrudeGeometry for robust complex polygon support ââ
+    // ── Manual extrusion: bypasses THREE.ExtrudeGeometry for robust complex polygon support ──
     // Optimized: direct earcut (no Vector2), pre-allocated typed arrays, inlined side quads
     // Async with sub-step progress for complex shapes (>100 verts)
     async function manualExtrude(outerPts, depth, holeCircles, label) {
@@ -1481,7 +1481,7 @@ async function loadDXF(file) {
       if (outerLen < 3) return null;
       const isComplex = outerLen > 100;
 
-      // ââ Sub-step 1: Build flat coordinate array for earcut (no Vector2 objects) ââ
+      // ── Sub-step 1: Build flat coordinate array for earcut (no Vector2 objects) ──
       if (isComplex) { showLoading(label + ' contours...'); await yieldToUI(); }
 
       // Flat coords: [x0,y0, x1,y1, ...] for outer + all holes
@@ -1503,7 +1503,7 @@ async function loadDXF(file) {
         flatCoords[i * 2] = outerPts[i].x;
         flatCoords[i * 2 + 1] = outerPts[i].y;
       }
-      // Write hole contours (circles â polygon)
+      // Write hole contours (circles → polygon)
       let wOff = outerLen * 2;
       if (holeCircles && holeCircles.length) {
         const hSegs = 48;
@@ -1518,30 +1518,30 @@ async function loadDXF(file) {
         }
       }
 
-      // ââ Sub-step 2: Triangulate with earcut directly (skip THREE.ShapeUtils overhead) ââ
+      // ── Sub-step 2: Triangulate with earcut directly (skip THREE.ShapeUtils overhead) ──
       if (isComplex) { showLoading(label + ' triangulating...'); await yieldToUI(); }
 
       const triIndices = earcut(flatCoords, holeIndices.length ? holeIndices : null, 2);
       if (triIndices.length === 0) return null;
       const numTris = triIndices.length / 3;
 
-      // ââ Pre-calculate sizes and pre-allocate ALL typed arrays ââ
+      // ── Pre-calculate sizes and pre-allocate ALL typed arrays ──
       const N = totalPts;
       let totalSideEdges = outerLen;
       for (let h = 0; h < holeLens.length; h++) totalSideEdges += holeLens[h];
       const sideQuads = totalSideEdges;
       const totalVerts = N * 2 + sideQuads * 4;           // bottom + top + sides
-      const totalIndices = numTris * 6 + sideQuads * 6;   // 2 faces Ã tris + side quads Ã 2 tris
+      const totalIndices = numTris * 6 + sideQuads * 6;   // 2 faces × tris + side quads × 2 tris
       const pos = new Float32Array(totalVerts * 3);
       const nrm = new Float32Array(totalVerts * 3);
       const idx = new Uint32Array(totalIndices);
 
-      // ââ Sub-step 3: Bottom + Top faces in single pass (halves iteration) ââ
+      // ── Sub-step 3: Bottom + Top faces in single pass (halves iteration) ──
       if (isComplex) { showLoading(label + ' faces...'); await yieldToUI(); }
 
       const topBase = N;
-      let vi3 = 0;     // position/normal write offset (Ã3)
-      let tvi3 = N * 3; // top face position/normal write offset (Ã3)
+      let vi3 = 0;     // position/normal write offset (×3)
+      let tvi3 = N * 3; // top face position/normal write offset (×3)
 
       for (let i = 0; i < N; i++) {
         const x = flatCoords[i * 2];
@@ -1556,7 +1556,7 @@ async function loadDXF(file) {
         tvi3 += 3;
       }
 
-      // Write face indices â bottom (CW) and top (CCW)
+      // Write face indices — bottom (CW) and top (CCW)
       let ii = 0;
       for (let t = 0; t < triIndices.length; t += 3) {
         const a = triIndices[t], b = triIndices[t + 1], c = triIndices[t + 2];
@@ -1564,7 +1564,7 @@ async function loadDXF(file) {
         idx[ii++] = topBase + a; idx[ii++] = topBase + b; idx[ii++] = topBase + c; // top CCW
       }
 
-      // ââ Sub-step 4: Side walls â inlined (no function call per edge) ââ
+      // ── Sub-step 4: Side walls — inlined (no function call per edge) ──
       if (isComplex) { showLoading(label + ' side walls...'); await yieldToUI(); }
 
       let vi = N * 2; // vertex write index (after bottom + top)
@@ -1572,7 +1572,7 @@ async function loadDXF(file) {
       function writeSideEdge(i0, i1) {
         const ax = flatCoords[i0 * 2], ay = flatCoords[i0 * 2 + 1];
         const bx = flatCoords[i1 * 2], by = flatCoords[i1 * 2 + 1];
-        // Outward normal in XZ plane (edge rotated 90Â° CW after DXFâThree.js mapping)
+        // Outward normal in XZ plane (edge rotated 90° CW after DXF→Three.js mapping)
         const ex = bx - ax, ez = -(by - ay);
         let nx = -ez, nz = ex;
         const len = Math.sqrt(nx * nx + nz * nz) || 1;
@@ -1610,7 +1610,7 @@ async function loadDXF(file) {
       return geo;
     }
 
-    // ââ Phase 2: Build geometry for all shapes ââ
+    // ── Phase 2: Build geometry for all shapes ──
     showLoading('Extruding 0 / ' + shapes.length + '...', 14);
     await yieldToUI();
     const allGeos = [];
@@ -1649,7 +1649,7 @@ async function loadDXF(file) {
       }
     }
 
-    // ââ Phase 3: Manual buffer merge (faster than BufferGeometryUtils) ââ
+    // ── Phase 3: Manual buffer merge (faster than BufferGeometryUtils) ──
     showLoading('Merging 0 / ' + allGeos.length + '...', 84);
     await yieldToUI();
 
@@ -1737,9 +1737,9 @@ function loadFile(file) {
 function parseColor(colorStr) {
   if (!colorStr || typeof colorStr !== 'string') return new THREE.Color(0xf59e0b);
   let s = colorStr.trim();
-  // #RRGGBBAA â #RRGGBB (strip alpha)
+  // #RRGGBBAA → #RRGGBB (strip alpha)
   if (s.match(/^#[0-9a-f]{8}$/i)) s = s.slice(0, 7);
-  // #RGBA â #RGB (strip alpha from short form)
+  // #RGBA → #RGB (strip alpha from short form)
   if (s.match(/^#[0-9a-f]{4}$/i)) s = s.slice(0, 4);
   try {
     return new THREE.Color(s);
@@ -1766,11 +1766,11 @@ async function parseBambu3MF(buffer, onProgress) {
   const modelFiles = files.filter(f => f.endsWith('.model'));
   const stlFiles = files.filter(f => f.toLowerCase().endsWith('.stl'));
 
-  // ââ Bambu color system: extruder-based ââ
+  // ── Bambu color system: extruder-based ──
   // Bambu stores colors NOT in standard 3MF basematerials, but via:
-  //   1. project_settings.config (JSON) â filament_colour array (per extruder slot)
-  //   2. model_settings.config (XML) â <object id="N"><metadata key="extruder" value="M"/>
-  // We parse both to build objectId â color mapping.
+  //   1. project_settings.config (JSON) → filament_colour array (per extruder slot)
+  //   2. model_settings.config (XML) → <object id="N"><metadata key="extruder" value="M"/>
+  // We parse both to build objectId → color mapping.
 
   await progress('Reading filament config...', 20);
   // Step A: Extract filament colors and material info from project_settings.config
@@ -1807,12 +1807,12 @@ async function parseBambu3MF(buffer, onProgress) {
   }
 
   await progress('Reading model settings...', 30);
-  // Step B: Extract object â extruder mapping AND part names from model_settings.config
-  const objectExtruderMap = new Map(); // objectId â extruder number (1-based)
-  const objectNameMap = new Map(); // objectId â name string
-  const partNameMap = new Map(); // partId â name string (for sub-parts)
-  const objectPlateMap = new Map(); // objectId â platerId (from <plate><model_instance>)
-  const plateNameMap = new Map(); // platerId â plater_name string
+  // Step B: Extract object → extruder mapping AND part names from model_settings.config
+  const objectExtruderMap = new Map(); // objectId → extruder number (1-based)
+  const objectNameMap = new Map(); // objectId → name string
+  const partNameMap = new Map(); // partId → name string (for sub-parts)
+  const objectPlateMap = new Map(); // objectId → platerId (from <plate><model_instance>)
+  const plateNameMap = new Map(); // platerId → plater_name string
   const modelSettingsFile = files.find(f => f.endsWith('model_settings.config'));
   if (modelSettingsFile) {
     try {
@@ -1843,7 +1843,7 @@ async function parseBambu3MF(buffer, onProgress) {
           });
         });
       });
-      // Step B2: Parse <plate> elements for object â plate assignment and plate names
+      // Step B2: Parse <plate> elements for object → plate assignment and plate names
       msDoc.querySelectorAll('plate').forEach(plate => {
         let platerId = 0, platerName = '';
         plate.querySelectorAll(':scope > metadata').forEach(md => {
@@ -1867,7 +1867,7 @@ async function parseBambu3MF(buffer, onProgress) {
   }
 
   await progress('Mapping colors...', 40);
-  // Step C: Build objectId â color by combining extruder map + filament colors
+  // Step C: Build objectId → color by combining extruder map + filament colors
   const objectColorMap = new Map();
   for (const [objId, extruder] of objectExtruderMap) {
     const colorIdx = extruder - 1; // extruder is 1-based
@@ -1878,7 +1878,7 @@ async function parseBambu3MF(buffer, onProgress) {
   console.log('[3MF] Object colors:', Object.fromEntries(objectColorMap));
 
   // Pre-parse all model XML docs (decode + DOMParser once per file, reuse later)
-  const parsedDocs = new Map(); // modelFile â { xml, doc }
+  const parsedDocs = new Map(); // modelFile → { xml, doc }
   const decoder = new TextDecoder();
   for (const modelFile of modelFiles) {
     const xml = decoder.decode(unzipped[modelFile]);
@@ -1909,16 +1909,16 @@ async function parseBambu3MF(buffer, onProgress) {
     });
   }
 
-  // ââ Cross-file resolution pipeline ââ
+  // ── Cross-file resolution pipeline ──
   // Bambu splits geometry across files: main model has items/components with p:path
   // pointing to external .model files. We need to:
   //   1. Parse all external files to collect meshes by (filePath, objectId)
-  //   2. Parse main model for items â components â resolve via p:path + objectid
+  //   2. Parse main model for items → components → resolve via p:path + objectid
   //   3. Apply extruder-based colors from objectColorMap
 
   await progress('Building mesh index...', 50);
-  // Build mesh index: "filepath::objectId" â { vertices, triangles }
-  const meshIndex = new Map(); // key: "normalizedPath::objId" â mesh data array
+  // Build mesh index: "filepath::objectId" → { vertices, triangles }
+  const meshIndex = new Map(); // key: "normalizedPath::objId" → mesh data array
   const pNS = 'http://schemas.microsoft.com/3dmanufacturing/production/2015/06';
 
   for (let fi = 0; fi < modelFiles.length; fi++) {
@@ -1976,7 +1976,7 @@ async function parseBambu3MF(buffer, onProgress) {
   const { doc: mainDoc } = parsedDocs.get(mainModelFile);
 
   // Parse components from main model (these reference external files via p:path)
-  const assemblyMap = new Map(); // objectId â [{ objectid, path, transform }]
+  const assemblyMap = new Map(); // objectId → [{ objectid, path, transform }]
   mainDoc.querySelectorAll('*').forEach(el => {
     if (el.localName === 'component') {
       const parentObj = el.closest('object');
@@ -2047,7 +2047,7 @@ async function parseBambu3MF(buffer, onProgress) {
   function addMeshToPlate(meshData, transform, colorStr, plateId, partName, filament) {
     const geometry = createGeometryFromMesh(meshData);
     if (transform) geometry.applyMatrix4(transform);
-    // Defer computeVertexNormals â done after lay-flat in finalizeGeometry()
+    // Defer computeVertexNormals — done after lay-flat in finalizeGeometry()
     const color = colorStr ? parseColor(colorStr) : new THREE.Color(0xf59e0b);
     const material = createFDMMaterial(color);
     const mesh = new THREE.Mesh(geometry, material);
@@ -2118,8 +2118,8 @@ function parseModelXML(xml, externalColorMap) {
     }
   });
 
-  // 2. Parse <object> elements â collect meshes keyed by object id
-  const objectMeshes = new Map(); // objectId â [{ vertices, triangles, color }]
+  // 2. Parse <object> elements → collect meshes keyed by object id
+  const objectMeshes = new Map(); // objectId → [{ vertices, triangles, color }]
   doc.querySelectorAll('*').forEach(el => {
     if (el.localName !== 'mesh') return;
     const vertices = [], triangles = [];
@@ -2146,9 +2146,9 @@ function parseModelXML(xml, externalColorMap) {
     }
   });
 
-  // 3. Parse <item> elements â get objectid, transform, partnumber (plate)
+  // 3. Parse <item> elements → get objectid, transform, partnumber (plate)
   //    Also handle <component> children inside objects for assemblies
-  const componentMap = new Map(); // objectId â [{ objectid, transform }]
+  const componentMap = new Map(); // objectId → [{ objectid, transform }]
   doc.querySelectorAll('*').forEach(el => {
     if (el.localName === 'component') {
       const parentObj = el.closest('object');
@@ -2220,7 +2220,7 @@ function parseModelXML(xml, externalColorMap) {
   return results;
 }
 
-// Parse 3MF transform attribute "m00 m01 m02 m10 m11 m12 m20 m21 m22 m30 m31 m32" â THREE.Matrix4
+// Parse 3MF transform attribute "m00 m01 m02 m10 m11 m12 m20 m21 m22 m30 m31 m32" → THREE.Matrix4
 function parseTransformAttr(attr) {
   if (!attr) return null;
   const v = attr.trim().split(/\s+/).map(Number);
@@ -2246,7 +2246,7 @@ function multiplyTransforms(a, b) {
 
 function createGeometryFromMesh(meshData) {
   const geometry = new THREE.BufferGeometry();
-  // meshData.vertices/triangles are already typed arrays â use directly, no copy
+  // meshData.vertices/triangles are already typed arrays — use directly, no copy
   const verts = meshData.vertices instanceof Float32Array ? meshData.vertices : new Float32Array(meshData.vertices);
   const tris = meshData.triangles instanceof Uint32Array ? meshData.triangles : new Uint32Array(meshData.triangles);
   geometry.setAttribute('position', new THREE.BufferAttribute(verts, 3));
@@ -2295,7 +2295,7 @@ function parseASCIISTL(text) {
   return geometry;
 }
 
-// âââ Model Processing âââ
+// ─── Model Processing ───
 async function processModel(object, fileName) {
   if (modelGroup) {
     scene.remove(modelGroup);
@@ -2349,7 +2349,7 @@ async function processModel(object, fileName) {
   hideLoading();
 }
 
-// âââ Lay Flat: rotate mesh so it sits stably on the bed with no floating geometry âââ
+// ─── Lay Flat: rotate mesh so it sits stably on the bed with no floating geometry ───
 
 function layFlatMesh(mesh) {
   const geo = mesh.geometry;
@@ -2387,7 +2387,7 @@ function layFlatMesh(mesh) {
   }
   if (faces.length === 0) return;
 
-  // 2. Cluster normals (within ~10Â°)
+  // 2. Cluster normals (within ~10°)
   const clusters = [];
   const threshold = Math.cos(10 * Math.PI / 180);
   for (const f of faces) {
@@ -2410,9 +2410,9 @@ function layFlatMesh(mesh) {
   }
   if (clusters.length === 0) return;
 
-  // 3. Evaluate top face clusters Ã 2 orientations + 6 principal axes
+  // 3. Evaluate top face clusters × 2 orientations + 6 principal axes
   clusters.sort((a, b) => b.totalArea - a.totalArea);
-  // Cap clusters to top 20 by area â diminishing returns beyond that
+  // Cap clusters to top 20 by area — diminishing returns beyond that
   const maxClusters = 20;
   const topClusters = clusters.slice(0, maxClusters);
   const down = new THREE.Vector3(0, -1, 0);
@@ -2495,7 +2495,7 @@ function evaluateOrientation(worldVerts, faces, pivot, quat) {
   const totalTris = nVerts / 3;
   const v = new THREE.Vector3();
 
-  // Rotate all vertices ONCE â store x, y, z in flat typed arrays
+  // Rotate all vertices ONCE — store x, y, z in flat typed arrays
   const rx = new Float32Array(nVerts);
   const ry = new Float32Array(nVerts);
   const rz = new Float32Array(nVerts);
@@ -2541,7 +2541,7 @@ function evaluateOrientation(worldVerts, faces, pivot, quat) {
     }
   }
 
-  // Column support analysis (16Ã16 grid)
+  // Column support analysis (16×16 grid)
   const gridRes = 16;
   const xSpan = xMax - xMin || 1, zSpan = zMax - zMin || 1;
 
@@ -2602,7 +2602,7 @@ function evaluateOrientation(worldVerts, faces, pivot, quat) {
   const aspectPenalty = footprintArea > 0.01 ? (totalH * totalH) / footprintArea : 0;
 
   // Combined CoG penalty scales with object dimensions so it competes with bedContactArea
-  // cogY is absolute mm above bed; cogHeightRatio Ã totalH recovers that
+  // cogY is absolute mm above bed; cogHeightRatio × totalH recovers that
   // Multiply ratio by totalH so a tall-standing thin object gets hammered
   const cogPenalty =
     cogHeightRatio * totalH * 3.0 +     // absolute CoG height in mm, weighted
@@ -2631,7 +2631,7 @@ async function layFlatGroup(group) {
   }
 }
 
-// âââ Auto Layout: 2D bin-pack all meshes across plates to fit on bed âââ
+// ─── Auto Layout: 2D bin-pack all meshes across plates to fit on bed ───
 
 // Collect every mesh across all current plates into a flat list with its XZ footprint
 function gatherMeshItems() {
@@ -2655,7 +2655,7 @@ function gatherMeshItems() {
   return items;
 }
 
-// Shelf-based 2D bin-packing onto a bedW Ã bedD area
+// Shelf-based 2D bin-packing onto a bedW × bedD area
 // Returns { placed: [{item, x, z}], overflow: [item] }
 function shelfPack(items, bedW, bedD, gap) {
   const usable_w = bedW - 2 * BED_PAD;
@@ -2723,7 +2723,7 @@ async function finalizeGeometry() {
         const pos = geo.attributes.position;
         if (pos) {
           const uvs = new Float32Array(pos.count * 2);
-          // Scale: 1 UV unit = 3mm â layer lines visible at print scale
+          // Scale: 1 UV unit = 3mm → layer lines visible at print scale
           const s = 1.0 / 3.0;
           for (let i = 0; i < pos.count; i++) {
             uvs[i * 2] = pos.getX(i) * s;
@@ -2884,7 +2884,7 @@ function getColors(group) {
   return [...map.values()];
 }
 
-// âââ Mesh volume (signed tetrahedron method, result in mmÂ³) âââ
+// ─── Mesh volume (signed tetrahedron method, result in mm³) ───
 function computeMeshVolume(mesh) {
   const geo = mesh.geometry;
   if (!geo || !geo.attributes.position) return 0;
@@ -2911,7 +2911,7 @@ function computeMeshVolume(mesh) {
 // Uses a simplified shell model: walls + top/bottom solid layers are 100% fill,
 // interior gets the chosen infill percentage
 function estimateWeight(volumeMm3, overrideDensity) {
-  const volCm3 = volumeMm3 / 1000; // mmÂ³ â cmÂ³
+  const volCm3 = volumeMm3 / 1000; // mm³ → cm³
   // Wall shell thickness
   const wallThickness = wallCount * nozzleDia; // mm
   const topBottomThickness = topBottomLayers * layerHeight; // mm
@@ -2920,7 +2920,7 @@ function estimateWeight(volumeMm3, overrideDensity) {
   const side = Math.cbrt(volumeMm3);
   if (side < 0.01) return 0;
   // Shell volume as fraction of total (simplified box model)
-  // Total vol = sideÂ³; interior vol = (side - 2*wall)Â² * (side - 2*tb)
+  // Total vol = side³; interior vol = (side - 2*wall)² * (side - 2*tb)
   const innerW = Math.max(0, side - 2 * wallThickness);
   const innerH = Math.max(0, side - 2 * topBottomThickness);
   const innerVol = innerW * innerW * innerH;
@@ -2932,7 +2932,7 @@ function estimateWeight(volumeMm3, overrideDensity) {
   return volCm3 * effectiveFill * density;
 }
 
-// âââ Object selection âââ
+// ─── Object selection ───
 function selectMesh(mesh) {
   // Deselect previous
   if (selectedMesh && selectedMesh.material) {
@@ -2958,9 +2958,9 @@ function selectMesh(mesh) {
   }
 }
 
-// âââ Plate / Camera âââ
+// ─── Plate / Camera ───
 let allPlatesMode = false;
-const savedPlatePositions = new Map(); // plate index â original group position
+const savedPlatePositions = new Map(); // plate index → original group position
 let clonedBeds = []; // bed clones for all-plates view
 
 function showPlate(index) {
@@ -3121,7 +3121,7 @@ function setCameraView(view) {
   })(t0);
 }
 
-// âââ UI âââ
+// ─── UI ───
 function updateUI(fileName) {
   modelNameText.textContent = fileName.replace(/\.\w+$/, '');
   modelNameEl.classList.remove('model-name-hidden');
@@ -3223,7 +3223,7 @@ function updateWeightInfo(meshes) {
   // Build per-filament weight breakdown if 3MF provides filament data
   let filamentBreakdown = '';
   if (hasFilamentData) {
-    const byType = new Map(); // type â { weight, density }
+    const byType = new Map(); // type → { weight, density }
     meshes.forEach(m => {
       const fil = m.userData.filament;
       if (!fil) return;
@@ -3235,16 +3235,16 @@ function updateWeightInfo(meshes) {
     });
     for (const [type, info] of byType) {
       const wStr = info.weight >= 1 ? info.weight.toFixed(1) + 'g' : (info.weight * 1000).toFixed(0) + 'mg';
-      filamentBreakdown += `<div class="flex justify-between" title="${info.name}"><span class="text-zinc-500">${type}:</span><span class="text-zinc-300">${wStr} (${info.density} g/cmÂ³)</span></div>`;
+      filamentBreakdown += `<div class="flex justify-between" title="${info.name}"><span class="text-zinc-500">${type}:</span><span class="text-zinc-300">${wStr} (${info.density} g/cm³)</span></div>`;
     }
   }
 
   weightInfo.innerHTML = `
-    <div class="flex justify-between"><span class="text-zinc-500">Volume:</span><span class="text-zinc-300">${totalVolCm3.toFixed(1)} cmÂ³</span></div>
+    <div class="flex justify-between"><span class="text-zinc-500">Volume:</span><span class="text-zinc-300">${totalVolCm3.toFixed(1)} cm³</span></div>
     <div class="flex justify-between"><span class="text-zinc-500">Weight:</span><span class="text-amber-400 font-semibold">${weightStr}</span></div>
     ${filamentBreakdown}
     <div class="flex justify-between"><span class="text-zinc-500">Infill:</span><span class="text-zinc-300">${infillPercent}%</span></div>
-    <div class="flex justify-between"><span class="text-zinc-500">Walls:</span><span class="text-zinc-300">${wallCount}Ã ${nozzleDia}mm</span></div>
+    <div class="flex justify-between"><span class="text-zinc-500">Walls:</span><span class="text-zinc-300">${wallCount}× ${nozzleDia}mm</span></div>
   `;
 }
 
@@ -3256,11 +3256,11 @@ function showLoading(t, pct) {
 }
 function hideLoading() { loadingOverlay.style.display = 'none'; loadingBar.style.width = '0%'; }
 
-// âââ Material / Weight Controls âââ
+// ─── Material / Weight Controls ───
 MATERIALS.forEach((m, i) => {
   const opt = document.createElement('option');
   opt.value = i;
-  opt.textContent = `${m.name} (${m.density} g/cmÂ³)`;
+  opt.textContent = `${m.name} (${m.density} g/cm³)`;
   materialSelect.appendChild(opt);
 });
 materialSelect.onchange = () => {
@@ -3286,7 +3286,7 @@ document.getElementById('walls-slider').oninput = function() {
   if (plates.length) updateObjectsPanel(plates[activePlateIndex]);
 };
 
-// âââ Raycaster: click-to-select objects on canvas âââ
+// ─── Raycaster: click-to-select objects on canvas ───
 let _downX = 0, _downY = 0;
 canvas.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
@@ -3313,7 +3313,7 @@ canvas.addEventListener('pointerup', (e) => {
   selectMesh(hits.length > 0 ? hits[0].object : null);
 });
 
-// âââ Events âââ
+// ─── Events ───
 document.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
 document.addEventListener('dragleave', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); });
 document.addEventListener('drop', e => {
@@ -3346,7 +3346,7 @@ document.getElementById('btn-layflat').onclick = async function() {
   fitCameraToGroup(plate.group);
 };
 
-// âââ Collision Resolution: push overlapping meshes apart âââ
+// ─── Collision Resolution: push overlapping meshes apart ───
 function getWorldBox(mesh) {
   mesh.updateMatrixWorld(true);
   if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
@@ -3416,7 +3416,7 @@ function resolveIntersections(plateGroup) {
   });
 }
 
-// âââ Face Pick Lay Flat âââ
+// ─── Face Pick Lay Flat ───
 const faceFlatBtn = document.getElementById('btn-faceflat');
 
 function getCanvas() { return renderer ? renderer.domElement : null; }
@@ -3459,7 +3459,7 @@ function highlightFace(intersection) {
   else { ia = faceIdx * 3; ib = faceIdx * 3 + 1; ic = faceIdx * 3 + 2; }
   vA.fromBufferAttribute(pos, ia); vB.fromBufferAttribute(pos, ib); vC.fromBufferAttribute(pos, ic);
 
-  // Find coplanar triangles (same normal within ~5Â°)
+  // Find coplanar triangles (same normal within ~5°)
   const edge1 = new THREE.Vector3().subVectors(vB, vA);
   const edge2 = new THREE.Vector3().subVectors(vC, vA);
   const clickedNormal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
@@ -3641,7 +3641,7 @@ document.getElementById('btn-quality').onclick = function() {
   applyGraphicsQuality(next);
 };
 
-// âââ Light Controls âââ
+// ─── Light Controls ───
 const lightPopup = document.getElementById('light-popup');
 const lightAzimuth = document.getElementById('light-azimuth');
 const lightElevation = document.getElementById('light-elevation');
@@ -3665,8 +3665,8 @@ function updateLightFromControls() {
     dirLightRef.position.set(x, y, z);
     dirLightRef.intensity = parseFloat(lightIntensity.value) / 100;
   }
-  lightAzimuthVal.textContent = lightAzimuth.value + 'Â°';
-  lightElevationVal.textContent = lightElevation.value + 'Â°';
+  lightAzimuthVal.textContent = lightAzimuth.value + '°';
+  lightElevationVal.textContent = lightElevation.value + '°';
   lightIntensityVal.textContent = (parseFloat(lightIntensity.value) / 100).toFixed(1);
 }
 
@@ -3696,7 +3696,7 @@ document.addEventListener('keydown', e => {
 
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 
-// âââ Boot âââ
+// ─── Boot ───
 initScene();
 </script>
 
