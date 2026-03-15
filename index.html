@@ -371,6 +371,13 @@ const embedColor = embedParams.get('color'); // hex color without #
 const embedAutoRotate = embedParams.get('rotate') !== '0'; // auto-rotate by default
 let embedSpinning = false;
 
+// Hide drop zone immediately in embed mode (before initScene)
+if (isEmbedMode) {
+  dropZone.classList.add('hidden');
+  document.getElementById('top-bar').style.display = 'none';
+  document.body.style.background = 'transparent';
+}
+
 // ─── FDM Plastic Material ───
 // Procedural normal map simulating FDM layer lines (~0.2mm layers)
 let fdmNormalMap = null;
