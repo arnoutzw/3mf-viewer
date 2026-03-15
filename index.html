@@ -302,7 +302,7 @@ const BED_W = 256, BED_D = 256; // Bambu X1C build plate (mm)
 const BED_PAD = 5;              // keep 5mm from edges
 let scene, camera, renderer, controls, postProcessing;
 let bloomPassNode = null;
-let bloomEnabled = !isEmbedMode;
+let bloomEnabled = true; // disabled later in applyEmbedMode() for embed
 let rendererBackend = 'unknown'; // 'webgpu' or 'webgl'
 let graphicsQuality = 'ultra'; // 'ultra' | 'high' | 'performance'
 let dirLightRef = null;
