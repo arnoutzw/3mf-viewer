@@ -3771,6 +3771,19 @@ function applyEmbedMode() {
   // Disable bloom in embed mode
   bloomEnabled = false;
 
+  // Add small light intensity slider
+  const embedLightCtrl = document.createElement('div');
+  embedLightCtrl.id = 'embed-light-ctrl';
+  embedLightCtrl.style.cssText = 'position:fixed;bottom:8px;right:8px;z-index:100;display:flex;align-items:center;gap:6px;background:rgba(24,24,27,0.7);backdrop-filter:blur(8px);border:1px solid rgba(63,63,70,0.5);border-radius:20px;padding:4px 10px;opacity:0.4;transition:opacity 0.2s;';
+  embedLightCtrl.onmouseenter = () => embedLightCtrl.style.opacity = '1';
+  embedLightCtrl.onmouseleave = () => embedLightCtrl.style.opacity = '0.4';
+  embedLightCtrl.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><input type="range" min="20" max="300" value="180" style="width:60px;height:3px;accent-color:#f59e0b;cursor:pointer;">`;
+  const embedLightSlider = embedLightCtrl.querySelector('input');
+  embedLightSlider.oninput = () => {
+    if (dirLightRef) dirLightRef.intensity = parseFloat(embedLightSlider.value) / 100;
+  };
+  document.body.appendChild(embedLightCtrl);
+
   // Enable auto-rotate if requested
   if (embedAutoRotate) {
     embedSpinning = true;
