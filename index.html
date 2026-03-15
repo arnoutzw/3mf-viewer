@@ -3810,6 +3810,20 @@ function applyEmbedMode() {
       case 'bambu-viewer-quality':
         if (e.data.quality) applyGraphicsQuality(e.data.quality);
         break;
+      case 'bambu-viewer-color':
+        if (e.data.color) {
+          const newColor = new THREE.Color(e.data.color.startsWith('#') ? e.data.color : '#' + e.data.color);
+          plates.forEach(p => {
+            p.group.traverse(c => {
+              if (c.isMesh && c.material) {
+                c.material.color.copy(newColor);
+                c.userData.originalColor = newColor.clone();
+              }
+            });
+            p.colors = getColors(p.group);
+          });
+        }
+        break;
     }
   });
 }
