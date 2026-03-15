@@ -1,14 +1,15 @@
-const CACHE_NAME = 'bambu-viewer-v4';
+const CACHE_NAME = 'bambu-viewer-v5';
 const SHARE_CACHE = 'bambu-share';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './base.stl',
-  'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js',
-  'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js',
-  'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/3MFLoader.js',
-  'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/STLLoader.js',
+  'https://cdn.jsdelivr.net/npm/three@0.175.0/build/three.webgpu.js',
+  'https://cdn.jsdelivr.net/npm/three@0.175.0/build/three.tsl.js',
+  'https://cdn.jsdelivr.net/npm/three@0.175.0/examples/jsm/controls/OrbitControls.js',
+  'https://cdn.jsdelivr.net/npm/three@0.175.0/examples/jsm/loaders/3MFLoader.js',
+  'https://cdn.jsdelivr.net/npm/three@0.175.0/examples/jsm/loaders/STLLoader.js',
   'https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js',
 ];
 

@@ -273,8 +273,10 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.175.0/build/three.webgpu.js",
+    "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.175.0/build/three.webgpu.js",
+    "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.175.0/build/three.tsl.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.175.0/examples/jsm/",
     "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js",
     "earcut": "https://cdn.jsdelivr.net/npm/earcut@3.0.2/+esm"
   }
@@ -282,25 +284,21 @@
 </script>
 
 <script type="module">
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
+import { pass } from 'three/tsl';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import earcut from 'earcut';
 
 // ─── State ───
 const BED_W = 256, BED_D = 256; // Bambu X1C build plate (mm)
 const BED_PAD = 5;              // keep 5mm from edges
-let scene, camera, renderer, controls, composer;
-let ssaoPassRef = null, bloomPassRef = null, vignettePassRef = null, smaaPassRef = null, outputPassRef = null;
+let scene, camera, renderer, controls, postProcessing;
+let bloomPassNode = null;
+let rendererBackend = 'unknown'; // 'webgpu' or 'webgl'
 let graphicsQuality = 'ultra'; // 'ultra' | 'high' | 'performance'
 let dirLightRef = null;
 let modelGroup = null;
@@ -359,6 +357,14 @@ const weightInfo = document.getElementById('weight-info');
 const bottomBar = document.getElementById('bottom-bar');
 const openBtn = document.getElementById('open-btn');
 const fileInput = document.getElementById('file-input');
+
+// ─── Embed Mode ───
+const embedParams = new URLSearchParams(window.location.search);
+const isEmbedMode = embedParams.has('embed') || embedParams.has('url');
+const embedFileUrl = embedParams.get('url');
+const embedColor = embedParams.get('color'); // hex color without #
+const embedAutoRotate = embedParams.get('rotate') !== '0'; // auto-rotate by default
+let embedSpinning = false;
 
 // ─── FDM Plastic Material ───
 // Procedural normal map simulating FDM layer lines (~0.2mm layers)
@@ -442,12 +448,12 @@ function createFDMTextures() {
   fdmNormalMap = new THREE.CanvasTexture(nCanvas);
   fdmNormalMap.wrapS = THREE.RepeatWrapping;
   fdmNormalMap.wrapT = THREE.RepeatWrapping;
-  fdmNormalMap.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 8;
+  fdmNormalMap.anisotropy = (renderer?.capabilities?.getMaxAnisotropy?.() || 8);
 
   fdmRoughnessMap = new THREE.CanvasTexture(rCanvas);
   fdmRoughnessMap.wrapS = THREE.RepeatWrapping;
   fdmRoughnessMap.wrapT = THREE.RepeatWrapping;
-  fdmRoughnessMap.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 8;
+  fdmRoughnessMap.anisotropy = (renderer?.capabilities?.getMaxAnisotropy?.() || 8);
 }
 
 function createFDMMaterial(color) {
@@ -519,14 +525,15 @@ function updateFDMForLayerHeight() {
 }
 
 // ─── Init ───
-function initScene() {
+async function initScene() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x111111); // near-black, matching loading screen
 
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
   camera.position.set(0, 400, 0);
 
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  // ── WebGPU Renderer (auto-falls back to WebGL2 if unsupported) ──
+  renderer = new THREE.WebGPURenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
@@ -535,32 +542,36 @@ function initScene() {
   renderer.toneMappingExposure = 1.0;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+  // Must await init before first render
+  await renderer.init();
+
+  // Detect which backend is active
+  rendererBackend = renderer.backend && renderer.backend.isWebGPUBackend ? 'webgpu' : 'webgl';
+  console.log(`Renderer backend: ${rendererBackend.toUpperCase()}`);
+
   // ══════════════════════════════════════════════════════════════
   // ── Photorealistic PBR Environment Map (studio HDRI emulation) ──
   // ══════════════════════════════════════════════════════════════
   const pmrem = new THREE.PMREMGenerator(renderer);
-  pmrem.compileEquirectangularShader();
   const envScene = new THREE.Scene();
 
   // Use gradient background sphere for smooth ambient fill
   // Dark studio with warm floor bounce — like a product photography setup
+  // Using vertex colors instead of ShaderMaterial for WebGPU compatibility
   const bgGeo = new THREE.SphereGeometry(50, 64, 32);
-  const bgMat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    uniforms: {},
-    vertexShader: `varying vec3 vWorldPos;
-      void main(){ vWorldPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `varying vec3 vWorldPos;
-      void main(){
-        float y = normalize(vWorldPos).y;
-        // Dark studio gradient: warm below, cool-neutral above
-        vec3 top = vec3(0.08, 0.09, 0.12);     // cool dark ceiling
-        vec3 mid = vec3(0.06, 0.06, 0.07);      // near black horizon
-        vec3 bot = vec3(0.10, 0.08, 0.06);      // warm dark floor bounce
-        vec3 col = y > 0.0 ? mix(mid, top, y) : mix(mid, bot, -y);
-        gl_FragColor = vec4(col, 1.0);
-      }`
-  });
+  const posAttr = bgGeo.attributes.position;
+  const colors = new Float32Array(posAttr.count * 3);
+  const top = [0.08, 0.09, 0.12], mid = [0.06, 0.06, 0.07], bot = [0.10, 0.08, 0.06];
+  for (let i = 0; i < posAttr.count; i++) {
+    const y = new THREE.Vector3().fromBufferAttribute(posAttr, i).normalize().y;
+    const src = y > 0 ? top : bot;
+    const t = Math.abs(y);
+    colors[i*3]   = mid[0] + (src[0] - mid[0]) * t;
+    colors[i*3+1] = mid[1] + (src[1] - mid[1]) * t;
+    colors[i*3+2] = mid[2] + (src[2] - mid[2]) * t;
+  }
+  bgGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const bgMat = new THREE.MeshBasicMaterial({ side: THREE.BackSide, vertexColors: true });
   envScene.add(new THREE.Mesh(bgGeo, bgMat));
 
   // Key light — large soft overhead panel (warm white)
@@ -608,7 +619,8 @@ function initScene() {
   accentPanel.lookAt(0, 0, 0);
   envScene.add(accentPanel);
 
-  const envMap = pmrem.fromScene(envScene, 0.02).texture;
+  const envRT = await pmrem.fromSceneAsync(envScene, 0.02).catch(() => pmrem.fromScene(envScene, 0.02));
+  const envMap = envRT.texture;
   scene.environment = envMap;
   pmrem.dispose();
 
@@ -649,57 +661,25 @@ function initScene() {
   scene.add(new THREE.HemisphereLight(0xd0d8e8, 0x3a3228, 0.1));
 
   // ══════════════════════════════════════════════════════════════
-  // ── Post-Processing Pipeline ──
+  // ── Post-Processing Pipeline (WebGPU TSL-based) ──
   // ══════════════════════════════════════════════════════════════
-  composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
-
-  // Screen-space Ambient Occlusion — adds contact shadows in crevices
   try {
-    ssaoPassRef = new SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
-    ssaoPassRef.kernelRadius = 12;
-    ssaoPassRef.minDistance = 0.001;
-    ssaoPassRef.maxDistance = 0.15;
-    ssaoPassRef.output = SSAOPass.OUTPUT.Default;
-    composer.addPass(ssaoPassRef);
-  } catch(e) { console.warn('SSAO not available, skipping AO:', e); }
+    postProcessing = new THREE.PostProcessing(renderer);
+    const scenePass = pass(scene, camera);
+    const scenePassColor = scenePass.getTextureNode('output');
 
-  // Subtle bloom — just enough for specular highlights to glow softly
-  bloomPassRef = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.15,   // strength (very subtle)
-    0.8,    // radius
-    0.92    // threshold (only bright specular hits bloom)
-  );
-  composer.addPass(bloomPassRef);
+    // Bloom — subtle specular highlight glow
+    bloomPassNode = bloom(scenePassColor);
+    bloomPassNode.strength.value = 0.15;
+    bloomPassNode.radius.value = 0.8;
+    if (bloomPassNode.luminance) bloomPassNode.luminance.threshold.value = 0.92;
 
-  // Subtle vignette + film grain for cinematic feel
-  const vignetteShader = {
-    uniforms: {
-      tDiffuse: { value: null },
-      darkness: { value: 0.4 },
-      offset: { value: 1.2 },
-    },
-    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `uniform sampler2D tDiffuse; uniform float darkness; uniform float offset;
-      varying vec2 vUv;
-      void main(){
-        vec4 texel = texture2D(tDiffuse, vUv);
-        vec2 uv = (vUv - 0.5) * 2.0;
-        float vig = 1.0 - darkness * smoothstep(offset - 0.5, offset, length(uv));
-        gl_FragColor = vec4(texel.rgb * vig, texel.a);
-      }`
-  };
-  vignettePassRef = new ShaderPass(vignetteShader);
-  composer.addPass(vignettePassRef);
-
-  // SMAA anti-aliasing (better than FXAA, works with post-processing)
-  smaaPassRef = new SMAAPass(window.innerWidth, window.innerHeight);
-  composer.addPass(smaaPassRef);
-
-  // Output pass (applies tone mapping + color space to final composite)
-  outputPassRef = new OutputPass();
-  composer.addPass(outputPassRef);
+    postProcessing.outputNode = scenePassColor.add(bloomPassNode);
+    console.log('Post-processing pipeline initialized (TSL bloom)');
+  } catch(e) {
+    console.warn('Post-processing not available, using direct render:', e);
+    postProcessing = null;
+  }
 
   // Controls
   controls = new OrbitControls(camera, canvas);
@@ -712,7 +692,7 @@ function initScene() {
 
   createBed(256, 256);
   window.addEventListener('resize', onResize);
-  animate();
+  renderer.setAnimationLoop(animate);
 }
 
 // Embedded Bambu X1C buildplate geometry (base64-encoded Float32 positions)
@@ -796,13 +776,13 @@ function createBed(w, d) {
   bedNormalMap.wrapS = THREE.RepeatWrapping;
   bedNormalMap.wrapT = THREE.RepeatWrapping;
   bedNormalMap.repeat.set(4, 4);
-  bedNormalMap.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  bedNormalMap.anisotropy = (renderer.capabilities?.getMaxAnisotropy?.() || 8);
 
   const bedRoughnessMap = new THREE.CanvasTexture(bedRCanvas);
   bedRoughnessMap.wrapS = THREE.RepeatWrapping;
   bedRoughnessMap.wrapT = THREE.RepeatWrapping;
   bedRoughnessMap.repeat.set(4, 4);
-  bedRoughnessMap.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  bedRoughnessMap.anisotropy = (renderer.capabilities?.getMaxAnisotropy?.() || 8);
 
   const bedMat = new THREE.MeshPhysicalMaterial({
     color: 0x2e2e2e,
@@ -860,12 +840,9 @@ function createBed(w, d) {
 function applyGraphicsQuality(quality) {
   graphicsQuality = quality;
 
-  // ── Post-processing passes ──
-  if (ssaoPassRef)     ssaoPassRef.enabled     = (quality === 'ultra');
-  if (bloomPassRef)    bloomPassRef.enabled     = (quality !== 'performance');
-  if (vignettePassRef) vignettePassRef.enabled  = (quality !== 'performance');
-  if (smaaPassRef)     smaaPassRef.enabled      = (quality !== 'performance');
-  if (outputPassRef)   outputPassRef.enabled    = (quality !== 'performance');
+  // ── Post-processing (WebGPU TSL pipeline) ──
+  // In performance mode, postProcessing is skipped entirely in animate()
+  // No per-pass enable/disable needed — the TSL pipeline is all-or-nothing
 
   // ── Shadow map resolution ──
   if (dirLightRef && dirLightRef.shadow) {
@@ -881,7 +858,7 @@ function applyGraphicsQuality(quality) {
   const maxDPR = quality === 'performance' ? 1 : 2;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxDPR));
   renderer.setSize(window.innerWidth, window.innerHeight);
-  if (composer) composer.setSize(window.innerWidth, window.innerHeight);
+  // PostProcessing inherits size from renderer automatically
 
   // ── Rebuild all part materials for the new tier ──
   for (const plate of plates) {
@@ -916,16 +893,23 @@ const STREAK_REQUIRED = 3;           // must sustain for 3s before switching
 const fpsEl = document.getElementById('fps-counter');
 
 function animate() {
-  requestAnimationFrame(animate);
+  // Embed mode auto-rotate
+  if (embedSpinning && controls) {
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 2.0;
+  } else if (controls) {
+    controls.autoRotate = false;
+  }
   controls.update();
-  if (graphicsQuality !== 'performance' && composer) composer.render();
+  if (graphicsQuality !== 'performance' && postProcessing) postProcessing.render();
   else renderer.render(scene, camera);
   fpsFrames++;
   const now = performance.now();
   if (now - fpsLastTime >= 1000) {
     const fps = fpsFrames;
     const qLabel = graphicsQuality === 'ultra' ? 'U' : graphicsQuality === 'high' ? 'H' : 'P';
-    fpsEl.textContent = fps + ' FPS · ' + qLabel;
+    const gpuLabel = rendererBackend === 'webgpu' ? 'GPU' : 'GL';
+    fpsEl.textContent = fps + ' FPS · ' + qLabel + ' · ' + gpuLabel;
     fpsFrames = 0;
     fpsLastTime = now;
 
@@ -971,7 +955,7 @@ function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  if (composer) composer.setSize(window.innerWidth, window.innerHeight);
+  // PostProcessing inherits size from renderer automatically
 }
 
 // ─── 3MF Loading (custom Bambu-aware parser) ───
@@ -2341,6 +2325,18 @@ async function processModel(object, fileName) {
   // Finalize geometry after layout (normals + bounding boxes deferred from parsing)
   showLoading('Finalizing...', 98);
   await finalizeGeometry();
+  // Embed mode: override all mesh colors if ?color= specified
+  if (isEmbedMode && embedColor) {
+    const overrideColor = new THREE.Color('#' + embedColor);
+    plates.forEach(p => {
+      p.group.traverse(c => {
+        if (c.isMesh && c.material) {
+          c.material.color.copy(overrideColor);
+          c.userData.originalColor = overrideColor.clone();
+        }
+      });
+    });
+  }
   plates.forEach(p => { p.colors = getColors(p.group); });
   scene.add(modelGroup);
   activePlateIndex = 0;
@@ -3696,8 +3692,98 @@ document.addEventListener('keydown', e => {
 
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 
+// ─── Embed Mode: fetch and load file from URL ───
+async function loadFromUrl(url) {
+  const fileName = decodeURIComponent(url.split('/').pop().split('?')[0]) || 'model';
+  const ext = fileName.split('.').pop().toLowerCase();
+  showLoading('Downloading ' + fileName + '...', 0);
+  dropZone.classList.add('hidden');
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const arrayBuffer = await resp.arrayBuffer();
+    const file = new File([arrayBuffer], fileName, { type: resp.headers.get('content-type') || '' });
+    if (ext === '3mf') await load3MF(file);
+    else if (ext === 'stl') await loadSTL(file);
+    else if (ext === 'obj') await loadOBJ(file);
+    else throw new Error('Unsupported format: ' + ext);
+  } catch (err) {
+    console.error('URL load error:', err);
+    showLoading('Error loading file: ' + err.message);
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'bambu-viewer-error', error: err.message }, '*');
+    }
+  }
+}
+
+function applyEmbedMode() {
+  // Transparent background for embedding in modals
+  document.body.style.background = 'transparent';
+  if (scene) scene.background = new THREE.Color(embedParams.get('bg') ? '#' + embedParams.get('bg') : 0x111111);
+
+  // Hide all non-essential UI
+  dropZone.classList.add('hidden');
+  document.getElementById('top-bar').style.display = 'none';
+  plateSidebar.classList.add('hidden');
+  objectsPanel.classList.add('hidden');
+  bottomBar.style.display = 'none';
+  document.getElementById('fps-counter').style.display = 'none';
+  document.getElementById('light-popup').style.display = 'none';
+
+  // Hide buildplate
+  bedVisible = false;
+  if (bedGroup) bedGroup.visible = false;
+
+  // Enable auto-rotate if requested
+  if (embedAutoRotate) {
+    embedSpinning = true;
+  }
+
+  // Override updateUI to keep embed UI hidden
+  const _origUpdateUI = updateUI;
+  updateUI = function(fileName) {
+    _origUpdateUI(fileName);
+    // Re-hide UI after the original function shows it
+    plateSidebar.classList.add('hidden');
+    objectsPanel.classList.add('hidden');
+    bottomBar.style.display = 'none';
+    document.getElementById('top-bar').style.display = 'none';
+    // Hide bed after model load
+    bedVisible = false;
+    if (bedGroup) bedGroup.visible = false;
+    // Notify parent that model is loaded
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'bambu-viewer-loaded', fileName }, '*');
+    }
+  };
+
+  // Listen for commands from parent
+  window.addEventListener('message', (e) => {
+    if (!e.data || typeof e.data !== 'object') return;
+    switch(e.data.type) {
+      case 'bambu-viewer-load':
+        if (e.data.url) loadFromUrl(e.data.url);
+        break;
+      case 'bambu-viewer-rotate':
+        embedSpinning = !!e.data.enabled;
+        break;
+      case 'bambu-viewer-view':
+        if (e.data.view) setCameraView(e.data.view);
+        break;
+      case 'bambu-viewer-quality':
+        if (e.data.quality) applyGraphicsQuality(e.data.quality);
+        break;
+    }
+  });
+}
+
 // ─── Boot ───
-initScene();
+initScene().then(() => {
+  if (isEmbedMode) {
+    applyEmbedMode();
+    if (embedFileUrl) loadFromUrl(embedFileUrl);
+  }
+}).catch(e => console.error('Failed to init scene:', e));
 </script>
 
 <script>
