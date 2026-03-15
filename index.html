@@ -2328,6 +2328,18 @@ async function processModel(object, fileName) {
     modelGroup.add(pg);
   }
 
+  // Embed mode: merge all plates into a single plate
+  if (isEmbedMode && plates.length > 1) {
+    const merged = new THREE.Group();
+    merged.visible = false;
+    plates.forEach(p => {
+      p.group.traverse(m => { if (m.isMesh) merged.add(m.clone()); });
+      modelGroup.remove(p.group);
+    });
+    plates = [{ group: merged, name: 'All Objects', colors: getColors(merged) }];
+    modelGroup.add(merged);
+  }
+
   // Auto-layout all parts onto beds
   showLoading('Laying out plates...', 95);
   await autoLayoutPlates();
@@ -2348,15 +2360,8 @@ async function processModel(object, fileName) {
   }
   plates.forEach(p => { p.colors = getColors(p.group); });
   scene.add(modelGroup);
-  // Embed mode with multiple plates: show all objects together
-  if (isEmbedMode && plates.length > 1) {
-    plates.forEach(p => { p.group.visible = true; });
-    activePlateIndex = -1;
-    fitCameraToGroup(modelGroup);
-  } else {
-    activePlateIndex = 0;
-    showPlate(0);
-  }
+  activePlateIndex = 0;
+  showPlate(0);
   updateUI(fileName);
   hideLoading();
 }
