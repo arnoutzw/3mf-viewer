@@ -2009,7 +2009,9 @@ async function parseBambu3MF(buffer, onProgress) {
       for (const comp of components) {
         const combinedXform = multiplyTransforms(itemTransform, comp.transform);
         const partName = partNameMap.get(comp.objectid) || assemblyName || '';
-        const lookupKey = `${comp.path}::${comp.objectid}`;
+        // For same-file components (no p:path), resolve against the main model file
+        const resolvedPath = comp.path || ('/' + mainModelFile);
+        const lookupKey = `${resolvedPath}::${comp.objectid}`;
         const meshArr = meshIndex.get(lookupKey) || [];
         for (const m of meshArr) {
           const colorStr = m.color || extruderColor;
@@ -2050,9 +2052,9 @@ async function parseBambu3MF(buffer, onProgress) {
   }
 
   // Fallback: if main model resolution produced nothing, try each file's own build items
+  // (including the main model file — parseModelXML handles same-file components correctly)
   if (plateGroups.size === 0) {
     for (const modelFile of modelFiles) {
-      if (modelFile === mainModelFile) continue;
       const { xml } = parsedDocs.get(modelFile);
       const meshes = parseModelXML(xml, globalColorMap);
       for (const meshData of meshes) {
