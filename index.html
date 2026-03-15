@@ -363,7 +363,7 @@ const bottomBar = document.getElementById('bottom-bar');
 const openBtn = document.getElementById('open-btn');
 const fileInput = document.getElementById('file-input');
 
-// ─── Embed Mode ───
+// ─── Embed Mode (params: embed, url, color, rotate, bg) ───
 const embedParams = new URLSearchParams(window.location.search);
 const isEmbedMode = embedParams.has('embed') || embedParams.has('url');
 const embedFileUrl = embedParams.get('url');
