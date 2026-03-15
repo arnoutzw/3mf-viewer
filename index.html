@@ -2344,8 +2344,15 @@ async function processModel(object, fileName) {
   }
   plates.forEach(p => { p.colors = getColors(p.group); });
   scene.add(modelGroup);
-  activePlateIndex = 0;
-  showPlate(0);
+  // Embed mode with multiple plates: show all objects together
+  if (isEmbedMode && plates.length > 1) {
+    plates.forEach(p => { p.group.visible = true; });
+    activePlateIndex = -1;
+    fitCameraToGroup(modelGroup);
+  } else {
+    activePlateIndex = 0;
+    showPlate(0);
+  }
   updateUI(fileName);
   hideLoading();
 }
