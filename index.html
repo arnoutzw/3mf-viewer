@@ -358,6 +358,14 @@ const bottomBar = document.getElementById('bottom-bar');
 const openBtn = document.getElementById('open-btn');
 const fileInput = document.getElementById('file-input');
 
+// ─── Embed Mode ───
+const embedParams = new URLSearchParams(window.location.search);
+const isEmbedMode = embedParams.has('embed') || embedParams.has('url');
+const embedFileUrl = embedParams.get('url');
+const embedColor = embedParams.get('color'); // hex color without #
+const embedAutoRotate = embedParams.get('rotate') !== '0'; // auto-rotate by default
+let embedSpinning = false;
+
 // ─── FDM Plastic Material ───
 // Procedural normal map simulating FDM layer lines (~0.2mm layers)
 let fdmNormalMap = null;
@@ -885,6 +893,13 @@ const STREAK_REQUIRED = 3;           // must sustain for 3s before switching
 const fpsEl = document.getElementById('fps-counter');
 
 function animate() {
+  // Embed mode auto-rotate
+  if (embedSpinning && controls) {
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 2.0;
+  } else if (controls) {
+    controls.autoRotate = false;
+  }
   controls.update();
   if (graphicsQuality !== 'performance' && postProcessing) postProcessing.render();
   else renderer.render(scene, camera);
@@ -2310,6 +2325,18 @@ async function processModel(object, fileName) {
   // Finalize geometry after layout (normals + bounding boxes deferred from parsing)
   showLoading('Finalizing...', 98);
   await finalizeGeometry();
+  // Embed mode: override all mesh colors if ?color= specified
+  if (isEmbedMode && embedColor) {
+    const overrideColor = new THREE.Color('#' + embedColor);
+    plates.forEach(p => {
+      p.group.traverse(c => {
+        if (c.isMesh && c.material) {
+          c.material.color.copy(overrideColor);
+          c.userData.originalColor = overrideColor.clone();
+        }
+      });
+    });
+  }
   plates.forEach(p => { p.colors = getColors(p.group); });
   scene.add(modelGroup);
   activePlateIndex = 0;
@@ -3665,8 +3692,98 @@ document.addEventListener('keydown', e => {
 
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 
+// ─── Embed Mode: fetch and load file from URL ───
+async function loadFromUrl(url) {
+  const fileName = decodeURIComponent(url.split('/').pop().split('?')[0]) || 'model';
+  const ext = fileName.split('.').pop().toLowerCase();
+  showLoading('Downloading ' + fileName + '...', 0);
+  dropZone.classList.add('hidden');
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const arrayBuffer = await resp.arrayBuffer();
+    const file = new File([arrayBuffer], fileName, { type: resp.headers.get('content-type') || '' });
+    if (ext === '3mf') await load3MF(file);
+    else if (ext === 'stl') await loadSTL(file);
+    else if (ext === 'obj') await loadOBJ(file);
+    else throw new Error('Unsupported format: ' + ext);
+  } catch (err) {
+    console.error('URL load error:', err);
+    showLoading('Error loading file: ' + err.message);
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'bambu-viewer-error', error: err.message }, '*');
+    }
+  }
+}
+
+function applyEmbedMode() {
+  // Transparent background for embedding in modals
+  document.body.style.background = 'transparent';
+  if (scene) scene.background = new THREE.Color(embedParams.get('bg') ? '#' + embedParams.get('bg') : 0x111111);
+
+  // Hide all non-essential UI
+  dropZone.classList.add('hidden');
+  document.getElementById('top-bar').style.display = 'none';
+  plateSidebar.classList.add('hidden');
+  objectsPanel.classList.add('hidden');
+  bottomBar.style.display = 'none';
+  document.getElementById('fps-counter').style.display = 'none';
+  document.getElementById('light-popup').style.display = 'none';
+
+  // Hide buildplate
+  bedVisible = false;
+  if (bedGroup) bedGroup.visible = false;
+
+  // Enable auto-rotate if requested
+  if (embedAutoRotate) {
+    embedSpinning = true;
+  }
+
+  // Override updateUI to keep embed UI hidden
+  const _origUpdateUI = updateUI;
+  updateUI = function(fileName) {
+    _origUpdateUI(fileName);
+    // Re-hide UI after the original function shows it
+    plateSidebar.classList.add('hidden');
+    objectsPanel.classList.add('hidden');
+    bottomBar.style.display = 'none';
+    document.getElementById('top-bar').style.display = 'none';
+    // Hide bed after model load
+    bedVisible = false;
+    if (bedGroup) bedGroup.visible = false;
+    // Notify parent that model is loaded
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'bambu-viewer-loaded', fileName }, '*');
+    }
+  };
+
+  // Listen for commands from parent
+  window.addEventListener('message', (e) => {
+    if (!e.data || typeof e.data !== 'object') return;
+    switch(e.data.type) {
+      case 'bambu-viewer-load':
+        if (e.data.url) loadFromUrl(e.data.url);
+        break;
+      case 'bambu-viewer-rotate':
+        embedSpinning = !!e.data.enabled;
+        break;
+      case 'bambu-viewer-view':
+        if (e.data.view) setCameraView(e.data.view);
+        break;
+      case 'bambu-viewer-quality':
+        if (e.data.quality) applyGraphicsQuality(e.data.quality);
+        break;
+    }
+  });
+}
+
 // ─── Boot ───
-initScene().catch(e => console.error('Failed to init scene:', e));
+initScene().then(() => {
+  if (isEmbedMode) {
+    applyEmbedMode();
+    if (embedFileUrl) loadFromUrl(embedFileUrl);
+  }
+}).catch(e => console.error('Failed to init scene:', e));
 </script>
 
 <script>
