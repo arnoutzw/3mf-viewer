@@ -302,7 +302,7 @@ const BED_W = 256, BED_D = 256; // Bambu X1C build plate (mm)
 const BED_PAD = 5;              // keep 5mm from edges
 let scene, camera, renderer, controls, postProcessing;
 let bloomPassNode = null;
-let bloomEnabled = true;
+let bloomEnabled = !isEmbedMode;
 let rendererBackend = 'unknown'; // 'webgpu' or 'webgl'
 let graphicsQuality = 'ultra'; // 'ultra' | 'high' | 'performance'
 let dirLightRef = null;
@@ -668,22 +668,24 @@ async function initScene() {
   // ══════════════════════════════════════════════════════════════
   // ── Post-Processing Pipeline (WebGPU TSL-based) ──
   // ══════════════════════════════════════════════════════════════
-  try {
-    postProcessing = new THREE.PostProcessing(renderer);
-    const scenePass = pass(scene, camera);
-    const scenePassColor = scenePass.getTextureNode('output');
+  if (!isEmbedMode) {
+    try {
+      postProcessing = new THREE.PostProcessing(renderer);
+      const scenePass = pass(scene, camera);
+      const scenePassColor = scenePass.getTextureNode('output');
 
-    // Bloom — subtle specular highlight glow
-    bloomPassNode = bloom(scenePassColor);
-    bloomPassNode.strength.value = 0.15;
-    bloomPassNode.radius.value = 0.8;
-    if (bloomPassNode.luminance) bloomPassNode.luminance.threshold.value = 0.92;
+      // Bloom — subtle specular highlight glow
+      bloomPassNode = bloom(scenePassColor);
+      bloomPassNode.strength.value = 0.15;
+      bloomPassNode.radius.value = 0.8;
+      if (bloomPassNode.luminance) bloomPassNode.luminance.threshold.value = 0.92;
 
-    postProcessing.outputNode = scenePassColor.add(bloomPassNode);
-    console.log('Post-processing pipeline initialized (TSL bloom)');
-  } catch(e) {
-    console.warn('Post-processing not available, using direct render:', e);
-    postProcessing = null;
+      postProcessing.outputNode = scenePassColor.add(bloomPassNode);
+      console.log('Post-processing pipeline initialized (TSL bloom)');
+    } catch(e) {
+      console.warn('Post-processing not available, using direct render:', e);
+      postProcessing = null;
+    }
   }
 
   // Controls
