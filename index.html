@@ -3752,6 +3752,9 @@ function applyEmbedMode() {
   bedVisible = false;
   if (bedGroup) bedGroup.visible = false;
 
+  // Disable bloom for cleaner embed rendering
+  bloomEnabled = false;
+
   // Enable auto-rotate if requested
   if (embedAutoRotate) {
     embedSpinning = true;
