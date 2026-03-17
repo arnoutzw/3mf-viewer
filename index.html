@@ -261,7 +261,7 @@
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Light</span>
     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" fill="currentColor" opacity="0.15"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
   </button>
-  <button class="tb-btn active w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-bloom">
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-bloom">
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Bloom</span>
     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" fill="currentColor" opacity="0.15"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8" opacity="0.3"/></svg>
   </button>
@@ -302,7 +302,7 @@ const BED_W = 256, BED_D = 256; // Bambu X1C build plate (mm)
 const BED_PAD = 5;              // keep 5mm from edges
 let scene, camera, renderer, controls, postProcessing;
 let bloomPassNode = null;
-let bloomEnabled = true; // disabled later in applyEmbedMode() for embed
+let bloomEnabled = false; // always off
 let rendererBackend = 'unknown'; // 'webgpu' or 'webgl'
 let graphicsQuality = 'ultra'; // 'ultra' | 'high' | 'performance'
 let dirLightRef = null;
