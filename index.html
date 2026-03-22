@@ -4577,6 +4577,17 @@ const gallerySearch = document.getElementById('gallery-search');
 let galleryModels = [];
 let galleryLoaded = false;
 
+// Seed gallery — shown when Firestore is empty or unavailable
+const SEED_GALLERY = [
+  { id: 'seed-calibration-cube', name: 'Calibration Cube 20mm', fileName: 'calibration-cube.stl', downloadUrl: 'gallery/calibration-cube.stl', fileSize: 1499, fileType: 'stl', description: 'Standard 20×20×20 mm calibration cube for dimensional accuracy testing.', tags: ['calibration', 'test', 'beginner'], visible: true, _seed: true },
+  { id: 'seed-spur-gear', name: 'Spur Gear 12T', fileName: 'spur-gear-12t.stl', downloadUrl: 'gallery/spur-gear-12t.stl', fileSize: 11284, fileType: 'stl', description: 'Module 3 spur gear with 12 teeth and center bore. Great for mechanical assemblies.', tags: ['mechanical', 'gear', 'engineering'], visible: true, _seed: true },
+  { id: 'seed-hex-bolt', name: 'Hex Bolt M8×30', fileName: 'hex-bolt.stl', downloadUrl: 'gallery/hex-bolt.stl', fileSize: 3684, fileType: 'stl', description: 'Simplified M8 hex bolt — hex head with 30 mm shaft. Useful for fit testing.', tags: ['fastener', 'mechanical', 'test-fit'], visible: true, _seed: true },
+  { id: 'seed-vase', name: 'Cylinder Vase', fileName: 'vase-cylinder.stl', downloadUrl: 'gallery/vase-cylinder.stl', fileSize: 6484, fileType: 'stl', description: 'Simple cylindrical vase (60 mm tall, 30 mm diameter). Print in vase/spiral mode.', tags: ['vase', 'decoration', 'spiral-mode'], visible: true, _seed: true },
+  { id: 'seed-phone-stand', name: 'Phone Stand', fileName: 'phone-stand.stl', downloadUrl: 'gallery/phone-stand.stl', fileSize: 1284, fileType: 'stl', description: 'Minimalist L-shaped phone stand. No supports needed, prints flat.', tags: ['utility', 'phone', 'no-supports'], visible: true, _seed: true },
+  { id: 'seed-bracket', name: 'L-Bracket with Gusset', fileName: 'l-bracket.stl', downloadUrl: 'gallery/l-bracket.stl', fileSize: 1884, fileType: 'stl', description: 'Reinforced L-bracket for mounting. 50×50 mm with triangular gusset.', tags: ['bracket', 'mounting', 'structural'], visible: true, _seed: true },
+  { id: 'seed-boat', name: 'Mini Boat', fileName: 'mini-boat.stl', downloadUrl: 'gallery/mini-boat.stl', fileSize: 2484, fileType: 'stl', description: 'Simplified boat hull with cabin and chimney — a mini benchmarking print.', tags: ['benchmark', 'boat', 'fun'], visible: true, _seed: true },
+];
+
 function formatFileSize(bytes) {
   if (!bytes || bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -4585,22 +4596,31 @@ function formatFileSize(bytes) {
 }
 
 async function loadGallery() {
-  if (!galleryDb) { console.warn('Gallery: Firestore not available'); return; }
   if (galleryLoaded) { renderGallery(galleryModels); return; }
   galleryGrid.innerHTML = '<div class="col-span-full text-center text-zinc-500 text-sm font-mono py-8">Loading gallery...</div>';
   galleryEmpty.classList.add('hidden');
   galleryGrid.classList.remove('hidden');
   try {
-    const snap = await galleryDb.collection('gallery_models')
-      .where('visible', '==', true)
-      .orderBy('uploadedAt', 'desc')
-      .get();
-    galleryModels = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    let firestoreModels = [];
+    if (galleryDb) {
+      const snap = await galleryDb.collection('gallery_models')
+        .where('visible', '==', true)
+        .orderBy('uploadedAt', 'desc')
+        .get();
+      firestoreModels = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+    // Merge Firestore models with seed gallery (seeds shown at end, filtered out if Firestore has data with same name)
+    const fsNames = new Set(firestoreModels.map(m => (m.name || '').toLowerCase()));
+    const seeds = SEED_GALLERY.filter(s => !fsNames.has(s.name.toLowerCase()));
+    galleryModels = [...firestoreModels, ...seeds];
     galleryLoaded = true;
     renderGallery(galleryModels);
   } catch (err) {
     console.error('Gallery load error:', err);
-    galleryGrid.innerHTML = '<div class="col-span-full text-center text-zinc-500 text-sm font-mono py-8">Could not load gallery</div>';
+    // Fall back to seed gallery on error
+    galleryModels = [...SEED_GALLERY];
+    galleryLoaded = true;
+    renderGallery(galleryModels);
   }
 }
 
@@ -4620,7 +4640,7 @@ function renderGallery(models) {
     const tagsHtml = (m.tags || []).slice(0, 3).map(t =>
       `<span class="gallery-tag bg-amber-500/10 text-amber-500 text-[9px] font-mono px-1.5 py-0.5 rounded">${t}</span>`
     ).join('');
-    const deleteBtn = isGalleryAdmin
+    const deleteBtn = (isGalleryAdmin && !m._seed)
       ? `<button class="gallery-delete-btn absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center bg-zinc-800 border border-zinc-700 text-zinc-500 rounded text-[10px] font-mono leading-none cursor-pointer z-10" data-delete-id="${m.id}" data-delete-path="${m.storagePath || ''}" title="Delete model">&times;</button>`
       : '';
     card.innerHTML = `
@@ -4632,6 +4652,7 @@ function renderGallery(models) {
           <div class="flex items-center gap-2 mt-0.5">
             ${typeUpper ? `<span class="bg-zinc-800 text-zinc-400 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase">${typeUpper}</span>` : ''}
             <span class="text-zinc-500 text-[10px] font-mono">${formatFileSize(m.fileSize)}</span>
+            ${m._seed ? '<span class="bg-amber-500/20 text-amber-400 text-[8px] font-mono font-bold px-1.5 py-0.5 rounded uppercase">Sample</span>' : ''}
           </div>
         </div>
       </div>
