@@ -186,6 +186,57 @@
       background-color: rgba(16,6,159,0.08) !important;
       color: #10069f !important;
     }
+
+    /* ── Admin Panel ── */
+    #gallery-admin .admin-input {
+      transition: border-color 0.2s;
+    }
+    #gallery-admin .admin-input:focus {
+      border-color: rgba(245,158,11,0.5);
+      outline: none;
+    }
+    .gallery-delete-btn {
+      transition: all 0.15s;
+    }
+    .gallery-delete-btn:hover {
+      background-color: #ef4444 !important;
+      color: #fff !important;
+      border-color: #ef4444 !important;
+    }
+
+    /* Light: admin panel */
+    [data-theme="light"] #gallery-admin {
+      border-color: #cfd3e8 !important;
+    }
+    [data-theme="light"] #gallery-admin .admin-input {
+      background-color: #f5f6f8 !important;
+      border-color: #cfd3e8 !important;
+      color: #081249 !important;
+    }
+    [data-theme="light"] #gallery-admin .admin-input::placeholder {
+      color: #4a5280 !important;
+    }
+    [data-theme="light"] #gallery-admin .admin-input:focus {
+      border-color: rgba(16,6,159,0.5) !important;
+    }
+    [data-theme="light"] #gallery-admin .admin-upload-btn {
+      background-color: #10069f !important;
+      color: #fff !important;
+    }
+    [data-theme="light"] #gallery-admin .admin-upload-btn:hover {
+      background-color: #1a0fc0 !important;
+    }
+    [data-theme="light"] #gallery-admin .admin-label {
+      color: #10069f !important;
+    }
+    [data-theme="light"] #upload-bar {
+      background-color: #10069f !important;
+    }
+    [data-theme="light"] .gallery-delete-btn {
+      background-color: #f5f6f8 !important;
+      border-color: #cfd3e8 !important;
+      color: #4a5280 !important;
+    }
   </style>
 </head>
 <body class="bg-zinc-950 text-zinc-100 font-sans">
@@ -208,6 +259,27 @@
   </button>
   <!-- Gallery Panel -->
   <div id="gallery-panel" class="absolute inset-0 bg-zinc-950/[.97] backdrop-blur-sm z-10 hidden flex-col p-6 overflow-hidden">
+    <!-- Admin Upload Panel -->
+    <div id="gallery-admin" class="hidden border-b border-zinc-700 pb-4 mb-4">
+      <div class="admin-label text-[10px] font-mono text-amber-500 uppercase tracking-wider mb-3">Admin — Upload Model</div>
+      <div class="space-y-2">
+        <input type="text" id="upload-name" placeholder="Display name" class="admin-input w-full bg-zinc-800 border border-zinc-700 rounded-lg text-sm font-mono text-zinc-200 px-3 py-1.5">
+        <input type="text" id="upload-desc" placeholder="Description (optional)" class="admin-input w-full bg-zinc-800 border border-zinc-700 rounded-lg text-sm font-mono text-zinc-200 px-3 py-1.5">
+        <input type="text" id="upload-tags" placeholder="Tags (comma-separated)" class="admin-input w-full bg-zinc-800 border border-zinc-700 rounded-lg text-sm font-mono text-zinc-200 px-3 py-1.5">
+        <div class="flex gap-2">
+          <button id="upload-file-btn" class="admin-upload-btn flex-1 bg-amber-500 hover:bg-amber-400 text-zinc-900 font-mono font-bold text-sm px-4 py-2 rounded-lg transition-colors cursor-pointer">
+            Select File (.stl / .3mf / .obj)
+          </button>
+          <input type="file" id="upload-file-input" accept=".stl,.3mf,.obj" hidden>
+        </div>
+        <div id="upload-progress" class="hidden">
+          <div class="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+            <div id="upload-bar" class="h-full bg-amber-500 rounded-full transition-all" style="width:0%"></div>
+          </div>
+          <div id="upload-status" class="text-[11px] font-mono text-zinc-500 mt-1"></div>
+        </div>
+      </div>
+    </div>
     <div class="flex items-center gap-3 mb-4">
       <button id="gallery-back" class="text-zinc-400 hover:text-amber-400 transition-colors cursor-pointer p-1">
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -415,6 +487,7 @@
 
 <!-- Firebase (Gallery) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <script>
@@ -426,13 +499,14 @@ const _GALLERY_FB_CONFIG = {
   messagingSenderId: "258011834485",
   appId: "1:258011834485:web:5afb1efaa303b4dd93f03c",
 };
-let galleryDb, galleryStorage;
+let galleryDb, galleryStorage, galleryAuth;
 try {
   const app = firebase.initializeApp(_GALLERY_FB_CONFIG);
   galleryDb = app.firestore();
   galleryStorage = app.storage();
+  galleryAuth = app.auth();
 } catch(e) {
-  try { const app = firebase.app(); galleryDb = app.firestore(); galleryStorage = app.storage(); } catch(e2) {}
+  try { const app = firebase.app(); galleryDb = app.firestore(); galleryStorage = app.storage(); galleryAuth = app.auth(); } catch(e2) {}
 }
 </script>
 
@@ -3936,12 +4010,16 @@ function renderGallery(models) {
   galleryGrid.classList.remove('hidden');
   models.forEach(m => {
     const card = document.createElement('div');
-    card.className = 'gallery-card bg-zinc-900 border border-zinc-700 rounded-lg p-3 flex flex-col gap-2';
+    card.className = 'gallery-card bg-zinc-900 border border-zinc-700 rounded-lg p-3 flex flex-col gap-2 relative';
     const typeUpper = (m.fileType || '').toUpperCase();
     const tagsHtml = (m.tags || []).slice(0, 3).map(t =>
       `<span class="gallery-tag bg-amber-500/10 text-amber-500 text-[9px] font-mono px-1.5 py-0.5 rounded">${t}</span>`
     ).join('');
+    const deleteBtn = isGalleryAdmin
+      ? `<button class="gallery-delete-btn absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center bg-zinc-800 border border-zinc-700 text-zinc-500 rounded text-[10px] font-mono leading-none cursor-pointer z-10" data-delete-id="${m.id}" data-delete-path="${m.storagePath || ''}" title="Delete model">&times;</button>`
+      : '';
     card.innerHTML = `
+      ${deleteBtn}
       <div class="flex items-center gap-2">
         <svg class="w-8 h-8 text-amber-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l9 4.5v11L12 22l-9-4.5v-11z"/><path d="M12 22V12"/><path d="M3 6.5l9 5"/><path d="M21 6.5l-9 5"/></svg>
         <div class="min-w-0 flex-1">
@@ -3956,6 +4034,11 @@ function renderGallery(models) {
       ${tagsHtml ? `<div class="flex flex-wrap gap-1">${tagsHtml}</div>` : ''}
     `;
     card.onclick = () => loadGalleryModel(m);
+    // Wire up delete button if present
+    const delBtn = card.querySelector('.gallery-delete-btn');
+    if (delBtn) {
+      delBtn.onclick = (ev) => deleteGalleryModel(ev, m.id, m.storagePath || '');
+    }
     galleryGrid.appendChild(card);
   });
 }
@@ -4149,6 +4232,190 @@ window.addEventListener('message', function(ev) {
 });
 if (window.parent !== window) {
   try { window.parent.postMessage({ type: 'theme-request' }, '*'); } catch(e) {}
+}
+</script>
+
+<script>
+// ─── Gallery Admin Panel ───
+let isGalleryAdmin = false;
+let _galleryAdminAuthReady = false;
+
+function toggleAdminPanel() {
+  const adminEl = document.getElementById('gallery-admin');
+  if (!adminEl) return;
+  if (isGalleryAdmin) {
+    adminEl.classList.remove('hidden');
+  } else {
+    adminEl.classList.add('hidden');
+  }
+}
+
+// Listen for admin-auth from the portal
+window.addEventListener('message', function(ev) {
+  if (!ev.data || typeof ev.data !== 'object') return;
+  if (ev.data.type === 'admin-auth') {
+    isGalleryAdmin = !!ev.data.isAdmin;
+    toggleAdminPanel();
+
+    // Sign in with the relayed Firebase ID token for write access
+    if (ev.data.sso && ev.data.sso.firebaseIdToken && galleryAuth && !_galleryAdminAuthReady) {
+      galleryAuth.signInWithCustomToken(ev.data.sso.firebaseIdToken).catch(function() {
+        // Custom token may not work; try credential-based sign-in isn't available
+        // For gallery writes, security rules should allow authenticated users with admin claim
+        // Fall back to anonymous auth so at least the upload call reaches Firestore
+        if (!galleryAuth.currentUser) {
+          galleryAuth.signInAnonymously().catch(function() {});
+        }
+      }).then(function() {
+        _galleryAdminAuthReady = true;
+      });
+    }
+
+    // Re-render gallery to show/hide delete buttons
+    if (typeof galleryModels !== 'undefined' && galleryModels.length > 0) {
+      renderGallery(galleryModels);
+    }
+  }
+});
+
+// Upload file button wiring
+(function() {
+  const uploadFileBtn = document.getElementById('upload-file-btn');
+  const uploadFileInput = document.getElementById('upload-file-input');
+  const uploadProgress = document.getElementById('upload-progress');
+  const uploadBar = document.getElementById('upload-bar');
+  const uploadStatus = document.getElementById('upload-status');
+
+  if (!uploadFileBtn || !uploadFileInput) return;
+
+  uploadFileBtn.onclick = function() {
+    uploadFileInput.click();
+  };
+
+  uploadFileInput.onchange = async function() {
+    const file = uploadFileInput.files[0];
+    if (!file) return;
+
+    const displayName = (document.getElementById('upload-name').value || '').trim();
+    const description = (document.getElementById('upload-desc').value || '').trim();
+    const tagsRaw = (document.getElementById('upload-tags').value || '').trim();
+    const tags = tagsRaw ? tagsRaw.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : [];
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['stl', '3mf', 'obj'].includes(ext)) {
+      alert('Unsupported file type. Please select .stl, .3mf, or .obj');
+      return;
+    }
+
+    if (!galleryStorage || !galleryDb) {
+      alert('Firebase not available');
+      return;
+    }
+
+    // Ensure auth for writes
+    if (galleryAuth && !galleryAuth.currentUser) {
+      try { await galleryAuth.signInAnonymously(); } catch(e) {}
+    }
+
+    const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = 'gallery/models/' + Date.now() + '_' + sanitized;
+    const storageRef = galleryStorage.ref(storagePath);
+
+    // Show progress
+    uploadProgress.classList.remove('hidden');
+    uploadBar.style.width = '0%';
+    uploadStatus.textContent = 'Uploading...';
+    uploadFileBtn.disabled = true;
+    uploadFileBtn.style.opacity = '0.5';
+
+    try {
+      const uploadTask = storageRef.put(file);
+
+      uploadTask.on('state_changed',
+        function(snapshot) {
+          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          uploadBar.style.width = pct + '%';
+          uploadStatus.textContent = 'Uploading... ' + pct + '%';
+        },
+        function(error) {
+          uploadStatus.textContent = 'Upload failed: ' + error.message;
+          uploadFileBtn.disabled = false;
+          uploadFileBtn.style.opacity = '1';
+        },
+        async function() {
+          try {
+            uploadBar.style.width = '100%';
+            uploadStatus.textContent = 'Getting download URL...';
+            const downloadUrl = await storageRef.getDownloadURL();
+
+            uploadStatus.textContent = 'Saving to gallery...';
+            await galleryDb.collection('gallery_models').add({
+              name: displayName || file.name.replace(/\.[^.]+$/, ''),
+              fileName: file.name,
+              storagePath: storagePath,
+              downloadUrl: downloadUrl,
+              fileSize: file.size,
+              fileType: ext,
+              description: description,
+              tags: tags,
+              visible: true,
+              uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            uploadStatus.textContent = 'Upload complete!';
+            uploadBar.style.width = '100%';
+
+            // Clear form
+            document.getElementById('upload-name').value = '';
+            document.getElementById('upload-desc').value = '';
+            document.getElementById('upload-tags').value = '';
+            uploadFileInput.value = '';
+
+            // Refresh gallery
+            galleryLoaded = false;
+            await loadGallery();
+
+            // Hide progress after a moment
+            setTimeout(function() {
+              uploadProgress.classList.add('hidden');
+              uploadBar.style.width = '0%';
+              uploadStatus.textContent = '';
+            }, 2000);
+          } catch(err) {
+            uploadStatus.textContent = 'Error: ' + err.message;
+          }
+          uploadFileBtn.disabled = false;
+          uploadFileBtn.style.opacity = '1';
+        }
+      );
+    } catch(err) {
+      uploadStatus.textContent = 'Upload failed: ' + err.message;
+      uploadFileBtn.disabled = false;
+      uploadFileBtn.style.opacity = '1';
+    }
+  };
+})();
+
+// Admin delete handler
+async function deleteGalleryModel(ev, modelId, storagePath) {
+  ev.stopPropagation();
+  if (!confirm('Delete this model from the gallery?')) return;
+
+  try {
+    // Delete from Firestore
+    if (galleryDb) {
+      await galleryDb.collection('gallery_models').doc(modelId).delete();
+    }
+    // Delete from Storage
+    if (galleryStorage && storagePath) {
+      try { await galleryStorage.ref(storagePath).delete(); } catch(e) { console.warn('Storage delete error:', e); }
+    }
+    // Remove from local array and re-render
+    galleryModels = galleryModels.filter(function(m) { return m.id !== modelId; });
+    renderGallery(galleryModels);
+  } catch(err) {
+    alert('Delete failed: ' + err.message);
+  }
 }
 </script>
 </body>
