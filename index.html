@@ -237,6 +237,91 @@
       border-color: #cfd3e8 !important;
       color: #4a5280 !important;
     }
+
+    /* ── Quote Panel ── */
+    .quote-mat-btn {
+      transition: all 0.15s;
+      cursor: pointer;
+    }
+    .quote-mat-btn:hover {
+      border-color: rgba(245,158,11,0.5) !important;
+      background: rgba(245,158,11,0.06) !important;
+    }
+    .quote-mat-btn.active {
+      border-color: #f59e0b !important;
+      background: rgba(245,158,11,0.12) !important;
+    }
+    .quote-color-swatch {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.1);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .quote-color-swatch:hover {
+      transform: scale(1.15);
+      border-color: rgba(255,255,255,0.3);
+    }
+    .quote-color-swatch.active {
+      border-color: #f59e0b;
+      box-shadow: 0 0 0 2px rgba(245,158,11,0.4);
+    }
+    #quote-panel {
+      animation: gallerySlideIn 0.25s ease-out;
+    }
+
+    /* Light: quote panel */
+    [data-theme="light"] .quote-mat-btn:hover {
+      border-color: rgba(16,6,159,0.5) !important;
+      background: rgba(16,6,159,0.06) !important;
+    }
+    [data-theme="light"] .quote-mat-btn.active {
+      border-color: #10069f !important;
+      background: rgba(16,6,159,0.12) !important;
+    }
+    [data-theme="light"] .quote-color-swatch {
+      border-color: rgba(16,6,159,0.15);
+    }
+    [data-theme="light"] .quote-color-swatch:hover {
+      border-color: rgba(16,6,159,0.4);
+    }
+    [data-theme="light"] .quote-color-swatch.active {
+      border-color: #10069f;
+      box-shadow: 0 0 0 2px rgba(16,6,159,0.3);
+    }
+    [data-theme="light"] #quote-panel {
+      background-color: #ffffff !important;
+      border-color: #cfd3e8 !important;
+    }
+    [data-theme="light"] .quote-request-btn {
+      background-color: #10069f !important;
+    }
+    [data-theme="light"] .quote-request-btn:hover {
+      background-color: #1a10b9 !important;
+    }
+
+    /* ── Pricing Admin Modal ── */
+    #pricing-admin-modal .pricing-input {
+      transition: border-color 0.2s;
+    }
+    #pricing-admin-modal .pricing-input:focus {
+      border-color: rgba(245,158,11,0.5);
+      outline: none;
+    }
+    [data-theme="light"] #pricing-admin-modal {
+      background-color: rgba(239,242,244,0.97) !important;
+    }
+    [data-theme="light"] #pricing-admin-modal .bg-zinc-900 {
+      background-color: #ffffff !important;
+    }
+    [data-theme="light"] #pricing-admin-modal .pricing-input {
+      background-color: #f5f6f8 !important;
+      border-color: #cfd3e8 !important;
+      color: #081249 !important;
+    }
+    [data-theme="light"] #pricing-admin-modal .pricing-input:focus {
+      border-color: rgba(16,6,159,0.5) !important;
+    }
   </style>
 </head>
 <body class="bg-zinc-950 text-zinc-100 font-sans">
@@ -363,6 +448,72 @@
   </div>
 </div>
 
+<!-- ── Quote Panel (right sidebar, replaces objects panel in quote mode) ── -->
+<div id="quote-panel" class="fixed top-[60px] right-4 bottom-[76px] w-[280px] bg-zinc-900 border border-zinc-700 rounded-lg z-[100] hidden flex flex-col overflow-hidden">
+  <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-amber-500 px-3 pt-3 pb-1.5 flex items-center gap-2">
+    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+    Print Quote
+  </div>
+  <div id="quote-body" class="flex-1 overflow-y-auto px-3 pb-3 space-y-3">
+    <!-- Parts summary -->
+    <div id="quote-summary" class="text-xs font-mono text-zinc-400 leading-relaxed"></div>
+    <!-- Material selector -->
+    <div>
+      <div class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider mb-1.5">Material</div>
+      <div id="quote-materials" class="grid grid-cols-2 gap-1.5"></div>
+    </div>
+    <!-- Color selector -->
+    <div id="quote-color-section" class="hidden">
+      <div class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider mb-1.5">Color</div>
+      <div id="quote-colors" class="flex flex-wrap gap-2"></div>
+    </div>
+    <!-- Quality selector -->
+    <div>
+      <div class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider mb-1.5">Quality</div>
+      <select id="quote-quality" class="w-full bg-zinc-800 border border-zinc-700 rounded text-xs font-mono text-zinc-300 px-2 py-1.5 outline-none focus:border-amber-500/50 cursor-pointer">
+        <option value="0.28">Draft (0.28 mm)</option>
+        <option value="0.20" selected>Standard (0.20 mm)</option>
+        <option value="0.12">Fine (0.12 mm)</option>
+      </select>
+    </div>
+    <!-- Infill slider -->
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <div class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Infill</div>
+        <span id="quote-infill-val" class="text-[11px] font-mono text-zinc-300">20%</span>
+      </div>
+      <input type="range" id="quote-infill" min="10" max="100" value="20" step="5" class="w-full accent-amber-500 h-1 cursor-pointer">
+    </div>
+  </div>
+  <!-- Price breakdown (sticky bottom) -->
+  <div class="border-t border-zinc-700 p-3 space-y-1.5 bg-zinc-900">
+    <div id="quote-breakdown" class="text-[11px] font-mono text-zinc-400 leading-relaxed space-y-0.5"></div>
+    <div class="flex items-baseline justify-between pt-1">
+      <span class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Total</span>
+      <span id="quote-total" class="text-2xl font-mono font-bold text-amber-500">--</span>
+    </div>
+    <div class="text-[9px] font-mono text-zinc-600">Excl. shipping &middot; Prices indicative</div>
+    <button id="quote-request-btn" class="quote-request-btn w-full mt-2 bg-amber-500 hover:bg-amber-400 text-zinc-900 font-mono font-bold text-sm px-4 py-2.5 rounded-lg transition-colors cursor-pointer">
+      Request Quote
+    </button>
+  </div>
+</div>
+
+<!-- ── Pricing Admin Modal ── -->
+<div id="pricing-admin-modal" class="fixed inset-0 z-[1100] hidden flex items-center justify-center bg-black/60 backdrop-blur-sm">
+  <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-[520px] max-h-[80vh] shadow-xl flex flex-col">
+    <div class="flex items-center justify-between mb-4">
+      <div class="text-sm font-mono font-bold text-amber-500">Pricing Configuration</div>
+      <button id="pricing-admin-close" class="text-zinc-400 hover:text-zinc-200 cursor-pointer text-lg leading-none">&times;</button>
+    </div>
+    <div id="pricing-admin-body" class="flex-1 overflow-y-auto space-y-3"></div>
+    <div class="flex gap-2 mt-4 pt-3 border-t border-zinc-700">
+      <button id="pricing-admin-save" class="flex-1 bg-amber-500 hover:bg-amber-400 text-zinc-900 font-mono font-bold text-sm px-4 py-2 rounded-lg transition-colors cursor-pointer">Save Pricing</button>
+      <button id="pricing-admin-cancel" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-sm px-4 py-2 rounded-lg transition-colors cursor-pointer border border-zinc-600">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── FPS Counter ── -->
 <div id="fps-counter" class="fixed bottom-5 left-5 text-sm font-mono font-bold text-zinc-300 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-md z-[100] pointer-events-none">0 FPS</div>
 
@@ -482,6 +633,10 @@
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Graphics Quality</span>
     <svg class="w-[16px] h-[16px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
     <span id="quality-label" class="text-[10px] font-mono font-semibold uppercase tracking-wider">Ultra</span>
+  </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative hidden" id="btn-pricing-admin">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Pricing</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
   </button>
 </div>
 
@@ -613,6 +768,24 @@ if (isEmbedMode) {
   dropZone.classList.add('hidden');
   document.getElementById('top-bar').style.display = 'none';
   document.body.style.background = 'transparent';
+}
+
+// ─── Quote Mode (param: mode=quote) ───
+const isQuoteMode = new URLSearchParams(window.location.search).get('mode') === 'quote';
+let pricingConfig = null;
+let selectedQuoteMaterial = null;
+let selectedQuoteColor = null;
+
+// Density lookup for quote pricing (maps pricing material names to densities from MATERIALS array)
+const QUOTE_DENSITY_MAP = {
+  'PLA': 1.24, 'PETG': 1.27, 'ABS': 1.04, 'TPU': 1.21,
+  'PA-CF': 1.36, 'PLA-CF': 1.29, 'ASA': 1.07, 'PC': 1.20
+};
+
+if (isQuoteMode) {
+  // Change drop zone text for quote mode
+  const dropTitle = dropZone.querySelector('h2');
+  if (dropTitle) dropTitle.textContent = 'Upload your 3D model for a quote';
 }
 
 // ─── FDM Plastic Material ───
@@ -3411,7 +3584,21 @@ function updateUI(fileName) {
   } else {
     plateSidebar.classList.add('hidden');
   }
-  objectsPanel.classList.remove('hidden');
+  // Quote mode: show quote panel instead of objects panel, hide plate sidebar
+  if (isQuoteMode) {
+    objectsPanel.classList.add('hidden');
+    plateSidebar.classList.add('hidden');
+    quotePanel.classList.remove('hidden');
+    // Auto-select first material if not selected
+    if (!selectedQuoteMaterial && pricingConfig) {
+      const firstAvail = Object.entries(pricingConfig.materials).find(([, cfg]) => cfg.available);
+      if (firstAvail) selectQuoteMaterial(firstAvail[0]);
+    }
+    updateQuotePanel();
+  } else {
+    objectsPanel.classList.remove('hidden');
+    quotePanel.classList.add('hidden');
+  }
   bottomBar.style.display = 'flex';
 }
 
@@ -3508,6 +3695,416 @@ function updateWeightInfo(meshes) {
     <div class="flex justify-between"><span class="text-zinc-500">Infill:</span><span class="text-zinc-300">${infillPercent}%</span></div>
     <div class="flex justify-between"><span class="text-zinc-500">Walls:</span><span class="text-zinc-300">${wallCount}× ${nozzleDia}mm</span></div>
   `;
+  // Update quote panel if in quote mode
+  if (isQuoteMode) updateQuotePanel();
+}
+
+// ─── Quote System ───
+const quotePanel = document.getElementById('quote-panel');
+const quoteMaterialsGrid = document.getElementById('quote-materials');
+const quoteColorsContainer = document.getElementById('quote-colors');
+const quoteColorSection = document.getElementById('quote-color-section');
+const quoteSummary = document.getElementById('quote-summary');
+const quoteBreakdown = document.getElementById('quote-breakdown');
+const quoteTotal = document.getElementById('quote-total');
+const quoteQuality = document.getElementById('quote-quality');
+const quoteInfill = document.getElementById('quote-infill');
+const quoteInfillVal = document.getElementById('quote-infill-val');
+const quoteRequestBtn = document.getElementById('quote-request-btn');
+
+async function loadPricingConfig() {
+  if (!galleryDb) return;
+  try {
+    const doc = await galleryDb.collection('app_settings').doc('print_pricing').get();
+    if (doc.exists) {
+      pricingConfig = doc.data();
+    } else {
+      // Use default pricing if doc doesn't exist yet
+      pricingConfig = getDefaultPricingConfig();
+    }
+    if (isQuoteMode) renderQuoteMaterials();
+  } catch (err) {
+    console.warn('Failed to load pricing config:', err);
+    pricingConfig = getDefaultPricingConfig();
+    if (isQuoteMode) renderQuoteMaterials();
+  }
+}
+
+function getDefaultPricingConfig() {
+  return {
+    materials: {
+      'PLA': { pricePerKg: 45.00, setupFee: 5.00, minCharge: 8.00, available: true, availableColors: [{hex:'#ffffff',name:'White'},{hex:'#000000',name:'Black'},{hex:'#ff0000',name:'Red'}] },
+      'PETG': { pricePerKg: 55.00, setupFee: 5.00, minCharge: 10.00, available: true, availableColors: [{hex:'#ffffff',name:'White'},{hex:'#2a2a2a',name:'Black'}] },
+      'ABS': { pricePerKg: 55.00, setupFee: 5.00, minCharge: 10.00, available: true, availableColors: [] },
+      'TPU': { pricePerKg: 75.00, setupFee: 8.00, minCharge: 15.00, available: true, availableColors: [] },
+      'PA-CF': { pricePerKg: 120.00, setupFee: 10.00, minCharge: 20.00, available: true, availableColors: [{hex:'#2a2a2a',name:'Black'}] },
+      'PLA-CF': { pricePerKg: 80.00, setupFee: 8.00, minCharge: 12.00, available: true, availableColors: [{hex:'#2a2a2a',name:'Black'}] },
+      'ASA': { pricePerKg: 65.00, setupFee: 5.00, minCharge: 12.00, available: true, availableColors: [] },
+      'PC': { pricePerKg: 85.00, setupFee: 8.00, minCharge: 15.00, available: true, availableColors: [] }
+    },
+    currency: 'EUR',
+    taxRate: 0,
+    updatedAt: null
+  };
+}
+
+function renderQuoteMaterials() {
+  if (!pricingConfig || !quoteMaterialsGrid) return;
+  quoteMaterialsGrid.innerHTML = '';
+  const mats = pricingConfig.materials;
+  let firstAvailable = null;
+  for (const [name, cfg] of Object.entries(mats)) {
+    if (!cfg.available) continue;
+    if (!firstAvailable) firstAvailable = name;
+    const btn = document.createElement('button');
+    btn.className = 'quote-mat-btn bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono text-zinc-300 text-center';
+    btn.textContent = name;
+    btn.dataset.material = name;
+    btn.addEventListener('click', () => selectQuoteMaterial(name));
+    quoteMaterialsGrid.appendChild(btn);
+  }
+  // Auto-select first available material
+  if (firstAvailable && !selectedQuoteMaterial) {
+    selectQuoteMaterial(firstAvailable);
+  }
+}
+
+function selectQuoteMaterial(name) {
+  selectedQuoteMaterial = name;
+  selectedQuoteColor = null;
+  // Update button states
+  quoteMaterialsGrid.querySelectorAll('.quote-mat-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.material === name);
+  });
+  // Update infill/quality based on material density in objects panel too
+  const densityIdx = MATERIALS.findIndex(m => m.name === name || m.name.startsWith(name));
+  if (densityIdx >= 0) {
+    selectedMaterialIdx = densityIdx;
+    materialSelect.value = densityIdx;
+  }
+  // Render color swatches
+  renderQuoteColors(name);
+  updateQuotePanel();
+}
+
+function renderQuoteColors(materialName) {
+  if (!pricingConfig || !quoteColorsContainer) return;
+  const mat = pricingConfig.materials[materialName];
+  const colors = mat?.availableColors || [];
+  quoteColorsContainer.innerHTML = '';
+
+  if (colors.length === 0) {
+    quoteColorSection.classList.add('hidden');
+    return;
+  }
+  quoteColorSection.classList.remove('hidden');
+
+  colors.forEach((c, i) => {
+    const swatch = document.createElement('button');
+    swatch.className = 'quote-color-swatch';
+    swatch.style.backgroundColor = c.hex;
+    swatch.title = c.name;
+    swatch.dataset.hex = c.hex;
+    swatch.dataset.name = c.name;
+    swatch.addEventListener('click', () => {
+      selectedQuoteColor = c;
+      quoteColorsContainer.querySelectorAll('.quote-color-swatch').forEach(s => s.classList.remove('active'));
+      swatch.classList.add('active');
+      applyQuoteColorToModel(c.hex);
+      updateQuotePanel();
+    });
+    quoteColorsContainer.appendChild(swatch);
+  });
+
+  // Auto-select first color
+  if (colors.length > 0) {
+    selectedQuoteColor = colors[0];
+    quoteColorsContainer.querySelector('.quote-color-swatch')?.classList.add('active');
+    applyQuoteColorToModel(colors[0].hex);
+  }
+}
+
+function applyQuoteColorToModel(hex) {
+  const color = new THREE.Color(hex);
+  plates.forEach(p => {
+    p.group.traverse(c => {
+      if (c.isMesh && c.material) {
+        c.material.color.copy(color);
+        c.userData.originalColor = color.clone();
+      }
+    });
+    p.colors = getColors(p.group);
+  });
+}
+
+function updateQuotePanel() {
+  if (!isQuoteMode || !pricingConfig || !quotePanel) return;
+  if (!plates.length) return;
+
+  // Gather all meshes from active plate
+  const meshes = [];
+  const plate = plates[activePlateIndex >= 0 ? activePlateIndex : 0];
+  if (plate) {
+    plate.group.traverse(c => { if (c.isMesh) meshes.push(c); });
+  }
+
+  if (meshes.length === 0) {
+    quoteSummary.innerHTML = '<span class="text-zinc-500">No parts loaded</span>';
+    quoteBreakdown.innerHTML = '';
+    quoteTotal.textContent = '--';
+    return;
+  }
+
+  // Compute total volume and weight
+  let totalVol = 0;
+  meshes.forEach(m => {
+    if (!m.userData.volume) m.userData.volume = computeMeshVolume(m);
+    totalVol += m.userData.volume;
+  });
+
+  // Use quote material density
+  const density = QUOTE_DENSITY_MAP[selectedQuoteMaterial] || 1.24;
+
+  // Use quote infill/quality settings
+  const qInfill = parseInt(quoteInfill.value);
+  const qLayerH = parseFloat(quoteQuality.value);
+
+  // Save originals and temporarily override for weight calc
+  const origInfill = infillPercent;
+  const origLayerH = layerHeight;
+  infillPercent = qInfill;
+  layerHeight = qLayerH;
+
+  let totalWeight = 0;
+  meshes.forEach(m => {
+    totalWeight += estimateWeight(m.userData.volume, density);
+  });
+
+  // Restore originals
+  infillPercent = origInfill;
+  layerHeight = origLayerH;
+
+  const totalVolCm3 = totalVol / 1000;
+  const weightKg = totalWeight / 1000;
+  const weightStr = totalWeight >= 1 ? totalWeight.toFixed(1) + ' g' : (totalWeight * 1000).toFixed(0) + ' mg';
+
+  // Pricing
+  const matConfig = pricingConfig.materials[selectedQuoteMaterial];
+  if (!matConfig) return;
+
+  const materialCost = weightKg * matConfig.pricePerKg;
+  const totalBeforeMin = materialCost + matConfig.setupFee;
+  const totalPrice = Math.max(totalBeforeMin, matConfig.minCharge);
+  const currency = pricingConfig.currency || 'EUR';
+  const symbol = currency === 'EUR' ? '\u20AC' : currency;
+
+  // Summary
+  quoteSummary.innerHTML = `
+    <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${meshes.length}</span></div>
+    <div class="flex justify-between"><span class="text-zinc-500">Volume:</span><span class="text-zinc-300">${totalVolCm3.toFixed(1)} cm\u00B3</span></div>
+    <div class="flex justify-between"><span class="text-zinc-500">Weight:</span><span class="text-zinc-300">${weightStr}</span></div>
+  `;
+
+  // Breakdown
+  quoteBreakdown.innerHTML = `
+    <div class="flex justify-between"><span class="text-zinc-500">${selectedQuoteMaterial} (${weightStr}):</span><span class="text-zinc-300">${symbol} ${materialCost.toFixed(2)}</span></div>
+    <div class="flex justify-between"><span class="text-zinc-500">Setup fee:</span><span class="text-zinc-300">${symbol} ${matConfig.setupFee.toFixed(2)}</span></div>
+    ${totalBeforeMin < matConfig.minCharge ? `<div class="flex justify-between"><span class="text-zinc-500">Min charge:</span><span class="text-zinc-300">${symbol} ${matConfig.minCharge.toFixed(2)}</span></div>` : ''}
+  `;
+
+  // Total
+  quoteTotal.textContent = `${symbol} ${totalPrice.toFixed(2)}`;
+
+  // Store for email
+  quotePanel._lastQuote = {
+    material: selectedQuoteMaterial,
+    color: selectedQuoteColor?.name || 'Default',
+    weight: weightStr,
+    volume: totalVolCm3.toFixed(1) + ' cm\u00B3',
+    quality: quoteQuality.options[quoteQuality.selectedIndex].text,
+    infill: qInfill + '%',
+    price: `${symbol} ${totalPrice.toFixed(2)}`,
+    parts: meshes.length
+  };
+}
+
+// Quote panel controls
+if (quoteQuality) {
+  quoteQuality.onchange = () => updateQuotePanel();
+}
+if (quoteInfill) {
+  quoteInfill.oninput = function() {
+    quoteInfillVal.textContent = this.value + '%';
+    updateQuotePanel();
+  };
+}
+if (quoteRequestBtn) {
+  quoteRequestBtn.onclick = () => {
+    const q = quotePanel._lastQuote;
+    if (!q) return;
+    const modelName = modelNameText.textContent || 'Unknown Model';
+    const subject = encodeURIComponent('3D Print Quote');
+    const body = encodeURIComponent(
+      `Hello,\n\nI would like a quote for 3D printing the following:\n\n` +
+      `Model: ${modelName}\n` +
+      `Parts: ${q.parts}\n` +
+      `Material: ${q.material}\n` +
+      `Color: ${q.color}\n` +
+      `Quality: ${q.quality}\n` +
+      `Infill: ${q.infill}\n` +
+      `Volume: ${q.volume}\n` +
+      `Estimated Weight: ${q.weight}\n` +
+      `Estimated Price: ${q.price}\n\n` +
+      `Please confirm availability and final pricing.\n\nThank you`
+    );
+    window.open(`mailto:shop@blacksphereindustries.nl?subject=${subject}&body=${body}`, '_self');
+  };
+}
+
+// ─── Pricing Admin Modal ───
+const pricingAdminModal = document.getElementById('pricing-admin-modal');
+const pricingAdminBody = document.getElementById('pricing-admin-body');
+const pricingAdminSave = document.getElementById('pricing-admin-save');
+const pricingAdminCancel = document.getElementById('pricing-admin-cancel');
+const pricingAdminClose = document.getElementById('pricing-admin-close');
+const btnPricingAdmin = document.getElementById('btn-pricing-admin');
+
+function openPricingAdmin() {
+  if (!pricingConfig) return;
+  renderPricingAdminForm();
+  pricingAdminModal.style.display = 'flex';
+  pricingAdminModal.classList.remove('hidden');
+}
+
+function closePricingAdmin() {
+  pricingAdminModal.style.display = 'none';
+  pricingAdminModal.classList.add('hidden');
+}
+
+function renderPricingAdminForm() {
+  if (!pricingAdminBody || !pricingConfig) return;
+  const mats = pricingConfig.materials;
+  let html = '';
+  for (const [name, cfg] of Object.entries(mats)) {
+    const colorsHtml = (cfg.availableColors || []).map((c, ci) =>
+      `<div class="flex items-center gap-1 bg-zinc-800 rounded px-1.5 py-0.5" data-mat="${name}" data-ci="${ci}">
+        <input type="color" value="${c.hex}" class="pricing-color-hex w-4 h-4 rounded cursor-pointer bg-transparent p-0 border-0" style="appearance:none;-webkit-appearance:none;" data-mat="${name}" data-ci="${ci}">
+        <input type="text" value="${c.name}" class="pricing-color-name pricing-input bg-transparent border-0 text-[10px] font-mono text-zinc-300 w-14 outline-none" data-mat="${name}" data-ci="${ci}">
+        <button class="pricing-color-remove text-zinc-600 hover:text-red-400 text-xs cursor-pointer leading-none" data-mat="${name}" data-ci="${ci}">&times;</button>
+      </div>`
+    ).join('');
+
+    html += `
+      <div class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 space-y-2" data-pricing-mat="${name}">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-mono font-bold text-zinc-200">${name}</span>
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <span class="text-[10px] font-mono text-zinc-500">Available</span>
+            <input type="checkbox" class="pricing-available accent-amber-500 cursor-pointer" data-mat="${name}" ${cfg.available ? 'checked' : ''}>
+          </label>
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <div class="text-[9px] font-mono text-zinc-500 mb-0.5">Price/kg</div>
+            <input type="number" step="0.01" min="0" value="${cfg.pricePerKg}" class="pricing-input pricing-ppkg w-full bg-zinc-800 border border-zinc-700 rounded text-xs font-mono text-zinc-300 px-1.5 py-1" data-mat="${name}">
+          </div>
+          <div>
+            <div class="text-[9px] font-mono text-zinc-500 mb-0.5">Setup fee</div>
+            <input type="number" step="0.01" min="0" value="${cfg.setupFee}" class="pricing-input pricing-setup w-full bg-zinc-800 border border-zinc-700 rounded text-xs font-mono text-zinc-300 px-1.5 py-1" data-mat="${name}">
+          </div>
+          <div>
+            <div class="text-[9px] font-mono text-zinc-500 mb-0.5">Min charge</div>
+            <input type="number" step="0.01" min="0" value="${cfg.minCharge}" class="pricing-input pricing-min w-full bg-zinc-800 border border-zinc-700 rounded text-xs font-mono text-zinc-300 px-1.5 py-1" data-mat="${name}">
+          </div>
+        </div>
+        <div>
+          <div class="text-[9px] font-mono text-zinc-500 mb-1">Colors</div>
+          <div class="flex flex-wrap gap-1 pricing-colors-list" data-mat="${name}">
+            ${colorsHtml}
+            <button class="pricing-color-add flex items-center gap-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded px-1.5 py-0.5 text-[10px] font-mono text-zinc-400 cursor-pointer transition-colors" data-mat="${name}">+ Add</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  pricingAdminBody.innerHTML = html;
+
+  // Wire up color add/remove
+  pricingAdminBody.querySelectorAll('.pricing-color-add').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const matName = btn.dataset.mat;
+      if (!pricingConfig.materials[matName].availableColors) pricingConfig.materials[matName].availableColors = [];
+      pricingConfig.materials[matName].availableColors.push({ hex: '#808080', name: 'New' });
+      renderPricingAdminForm();
+    });
+  });
+  pricingAdminBody.querySelectorAll('.pricing-color-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const matName = btn.dataset.mat;
+      const ci = parseInt(btn.dataset.ci);
+      pricingConfig.materials[matName].availableColors.splice(ci, 1);
+      renderPricingAdminForm();
+    });
+  });
+  // Sync color hex/name changes back to pricingConfig in real time
+  pricingAdminBody.querySelectorAll('.pricing-color-hex').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const matName = inp.dataset.mat;
+      const ci = parseInt(inp.dataset.ci);
+      pricingConfig.materials[matName].availableColors[ci].hex = inp.value;
+    });
+  });
+  pricingAdminBody.querySelectorAll('.pricing-color-name').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const matName = inp.dataset.mat;
+      const ci = parseInt(inp.dataset.ci);
+      pricingConfig.materials[matName].availableColors[ci].name = inp.value;
+    });
+  });
+}
+
+async function savePricingConfig() {
+  if (!galleryDb || !pricingConfig) return;
+  // Read values from form
+  pricingAdminBody.querySelectorAll('[data-pricing-mat]').forEach(row => {
+    const matName = row.dataset.pricingMat;
+    const cfg = pricingConfig.materials[matName];
+    if (!cfg) return;
+    cfg.pricePerKg = parseFloat(row.querySelector('.pricing-ppkg').value) || 0;
+    cfg.setupFee = parseFloat(row.querySelector('.pricing-setup').value) || 0;
+    cfg.minCharge = parseFloat(row.querySelector('.pricing-min').value) || 0;
+    cfg.available = row.querySelector('.pricing-available').checked;
+  });
+  pricingConfig.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+
+  try {
+    // Ensure auth for writes
+    if (galleryAuth && !galleryAuth.currentUser) {
+      try { await galleryAuth.signInAnonymously(); } catch(e) {}
+    }
+    await galleryDb.collection('app_settings').doc('print_pricing').set(pricingConfig);
+    closePricingAdmin();
+    // Refresh quote panel
+    if (isQuoteMode) {
+      renderQuoteMaterials();
+      if (selectedQuoteMaterial) selectQuoteMaterial(selectedQuoteMaterial);
+    }
+  } catch (err) {
+    alert('Save failed: ' + err.message);
+  }
+}
+
+if (btnPricingAdmin) {
+  btnPricingAdmin.onclick = openPricingAdmin;
+}
+if (pricingAdminSave) {
+  pricingAdminSave.onclick = savePricingConfig;
+}
+if (pricingAdminCancel) {
+  pricingAdminCancel.onclick = closePricingAdmin;
+}
+if (pricingAdminClose) {
+  pricingAdminClose.onclick = closePricingAdmin;
 }
 
 const loadingBar = document.getElementById('loading-bar');
@@ -4215,6 +4812,8 @@ initScene().then(() => {
     applyEmbedMode();
     if (embedFileUrl) loadFromUrl(embedFileUrl);
   }
+  // Load pricing config for quote mode (also needed for admin button)
+  if (isQuoteMode || true) loadPricingConfig();
 }).catch(e => console.error('Failed to init scene:', e));
 </script>
 
@@ -4256,6 +4855,13 @@ window.addEventListener('message', function(ev) {
   if (ev.data.type === 'admin-auth') {
     isGalleryAdmin = !!ev.data.isAdmin;
     toggleAdminPanel();
+
+    // Show/hide pricing admin button
+    const pricingBtn = document.getElementById('btn-pricing-admin');
+    if (pricingBtn) {
+      if (isGalleryAdmin) pricingBtn.classList.remove('hidden');
+      else pricingBtn.classList.add('hidden');
+    }
 
     // Sign in with the relayed Firebase ID token for write access
     if (ev.data.sso && ev.data.sso.firebaseIdToken && galleryAuth && !_galleryAdminAuthReady) {
