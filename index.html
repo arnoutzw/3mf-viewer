@@ -263,6 +263,21 @@
     [data-theme="light"] .fil-swatch:hover { border-color: rgba(16,6,159,0.4); }
     [data-theme="light"] .fil-swatch.active { border-color: #10069f; box-shadow: 0 0 6px rgba(16,6,159,0.3); }
     [data-theme="light"] .fil-swatch .fil-swatch-tip { background: #fff; border-color: #d4d4d8; color: #27272a; }
+    /* ── Quantity Spinner ── */
+    .obj-qty {
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+    .obj-qty::-webkit-inner-spin-button,
+    .obj-qty::-webkit-outer-spin-button {
+      opacity: 1;
+    }
+    [data-theme="light"] .obj-qty {
+      background-color: #f5f6f8 !important;
+      border-color: #cfd3e8 !important;
+      color: #081249 !important;
+    }
+
     /* ── Floating Quote Card ── */
     [data-theme="light"] #price-quote-card > div {
       background: rgba(255,255,255,0.95); border-color: #d4d4d8;
@@ -889,6 +904,11 @@ if (isQuoteMode) {
 let filamentInventory = [];       // raw array from Firestore 'filaments' collection
 let filamentByMaterial = {};      // grouped: { 'PLA': [{...}, {...}], 'PETG': [...] }
 let selectedFilament = null;      // currently selected filament for quoting
+const objectQuantities = new Map(); // mesh UUID → quantity (default 1)
+
+function getObjQty(mesh) { return objectQuantities.get(mesh.uuid) || 1; }
+function setObjQty(mesh, qty) { objectQuantities.set(mesh.uuid, Math.max(1, Math.min(999, parseInt(qty) || 1))); }
+
 const filamentPicker = document.getElementById('filament-picker');
 const filamentMaterialSelect = document.getElementById('filament-material-select');
 const filamentColorSwatches = document.getElementById('filament-color-swatches');
@@ -1134,31 +1154,58 @@ function updatePriceQuote() {
     return;
   }
 
-  // Calculate weight
-  let totalVol = 0;
-  meshes.forEach(m => {
-    if (!m.userData.volume) m.userData.volume = computeMeshVolume(m);
-    totalVol += m.userData.volume;
-  });
+  // Calculate weight per unit and apply quantities
   const density = selectedFilament
     ? (MATERIALS.find(m => m.name === selectedFilament.material || m.name.startsWith(selectedFilament.material))?.density || 1.24)
     : (QUOTE_DENSITY_MAP[selectedQuoteMaterial] || 1.24);
-  let totalWeight = 0;
-  meshes.forEach(m => { totalWeight += estimateWeight(m.userData.volume, density); });
+  let subtotal = 0;
+  let totalQty = 0;
+  const perObj = [];
+  meshes.forEach(m => {
+    if (!m.userData.volume) m.userData.volume = computeMeshVolume(m);
+    const w = estimateWeight(m.userData.volume, density);
+    const qty = getObjQty(m);
+    const unitPrice = (w / 1000) * pricePerKg;
+    const lineTotal = unitPrice * qty;
+    subtotal += lineTotal;
+    totalQty += qty;
+    perObj.push({ name: m.name || 'Part', weight: w, qty, unitPrice, lineTotal });
+  });
 
-  const weightKg = totalWeight / 1000;
-  const materialCost = weightKg * pricePerKg;
-  const totalPrice = Math.max(materialCost, 0);
+  const MIN_TOTAL = 5.00;
+  const minApplied = subtotal < MIN_TOTAL && subtotal > 0;
+  const totalPrice = Math.max(subtotal, MIN_TOTAL);
 
   priceQuoteCard.classList.remove('hidden');
-  priceQuoteTotal.textContent = `€ ${totalPrice.toFixed(2)}`;
   if (isGalleryAdmin) {
-    const weightStr = totalWeight >= 1 ? totalWeight.toFixed(1) + ' g' : (totalWeight * 1000).toFixed(0) + ' mg';
-    const infillTypeLabel = (INFILL_TYPES[selectedInfillType] || INFILL_TYPES['grid']).label;
-    priceQuoteDetail.innerHTML = `${materialLabel}<br>${weightStr} × €${pricePerKg.toFixed(2)}/kg<br><span class="text-zinc-500">${infillPercent}% ${infillTypeLabel}</span>`;
+    // Admin: full breakdown with quantities
+    let detailHtml = `${materialLabel}`;
+    if (perObj.length === 1 && perObj[0].qty === 1) {
+      const weightStr = perObj[0].weight >= 1 ? perObj[0].weight.toFixed(1) + ' g' : (perObj[0].weight * 1000).toFixed(0) + ' mg';
+      const infillTypeLabel = (INFILL_TYPES[selectedInfillType] || INFILL_TYPES['grid']).label;
+      detailHtml += `<br>${weightStr} × €${pricePerKg.toFixed(2)}/kg<br><span class="text-zinc-500">${infillPercent}% ${infillTypeLabel}</span>`;
+    } else {
+      perObj.forEach(o => {
+        const qtyStr = o.qty > 1 ? ` ${o.qty}×` : '';
+        detailHtml += `<br><span class="text-zinc-500">${o.name}:</span>${qtyStr} €${o.lineTotal.toFixed(2)}`;
+      });
+    }
+    if (minApplied) {
+      detailHtml += `<br><span class="text-zinc-500 line-through">€${subtotal.toFixed(2)}</span> <span class="text-amber-400">Min €${MIN_TOTAL.toFixed(2)}</span>`;
+    }
+    priceQuoteDetail.innerHTML = detailHtml;
+    priceQuoteTotal.textContent = `€ ${totalPrice.toFixed(2)}`;
   } else {
-    // Guest mode: show only material name, no weight breakdown
-    priceQuoteDetail.innerHTML = `${materialLabel}`;
+    // Guest mode: show material + quantity summary, final price only
+    let detailHtml = `${materialLabel}`;
+    if (totalQty > 1) {
+      detailHtml += `<br><span class="text-zinc-500">${totalQty} items</span>`;
+    }
+    if (minApplied) {
+      detailHtml += `<br><span class="text-amber-400 text-[9px]">Minimum order: €${MIN_TOTAL.toFixed(2)}</span>`;
+    }
+    priceQuoteDetail.innerHTML = detailHtml;
+    priceQuoteTotal.textContent = `€ ${totalPrice.toFixed(2)}`;
   }
   if (priceQuoteHint) priceQuoteHint.classList.add('hidden');
 }
@@ -3884,19 +3931,28 @@ function updateObjectsPanelAll() {
       const name = c.name || `Object ${i + 1}`;
       const fil = c.userData.filament;
       const matLabel = fil ? `<span class="text-[10px] font-mono text-zinc-500 shrink-0" title="${fil.name || ''}">${fil.type}</span>` : '';
+      const curQty = getObjQty(c);
       row.innerHTML = `
         <input type="color" value="${hex}" class="obj-color w-5 h-5 rounded border border-zinc-600 cursor-pointer bg-transparent p-0 shrink-0" title="Change color" style="appearance:none;-webkit-appearance:none;">
         <span class="text-xs font-mono text-zinc-300 truncate flex-1" title="${name}">${name}</span>
         ${matLabel}
         <span class="text-[10px] font-mono text-zinc-600 shrink-0 obj-weight"></span>
+        <input type="number" min="1" max="999" value="${curQty}" class="obj-qty w-10 bg-zinc-800 border border-zinc-700 rounded text-[11px] font-mono text-zinc-300 text-center px-0.5 py-0.5 outline-none focus:border-amber-500/50 shrink-0" title="Quantity">
       `;
       row.querySelector('.obj-color').addEventListener('input', (e) => {
         const col = new THREE.Color(e.target.value);
         c.material.color.copy(col);
         c.userData.originalColor = col.clone();
       });
+      // Quantity input
+      row.querySelector('.obj-qty').addEventListener('change', (e) => {
+        setObjQty(c, e.target.value);
+        e.target.value = getObjQty(c);
+        updateWeightInfo(allMeshes);
+      });
+      row.querySelector('.obj-qty').addEventListener('click', (e) => e.stopPropagation());
       row.addEventListener('click', (e) => {
-        if (e.target.classList.contains('obj-color')) return;
+        if (e.target.classList.contains('obj-color') || e.target.classList.contains('obj-qty')) return;
         selectMesh(c);
       });
       objectList.appendChild(row);
@@ -4019,11 +4075,13 @@ function updateObjectsPanel(plate) {
     const name = m.name || `Object ${i + 1}`;
     const fil = m.userData.filament;
     const matLabel = fil ? `<span class="text-[10px] font-mono text-zinc-500 shrink-0" title="${fil.name || ''}">${fil.type}</span>` : '';
+    const curQty = getObjQty(m);
     row.innerHTML = `
       <input type="color" value="${hex}" class="obj-color w-5 h-5 rounded border border-zinc-600 cursor-pointer bg-transparent p-0 shrink-0" title="Change color" style="appearance:none;-webkit-appearance:none;">
       <span class="text-xs font-mono text-zinc-300 truncate flex-1" title="${name}">${name}</span>
       ${matLabel}
       <span class="text-[10px] font-mono text-zinc-600 shrink-0 obj-weight"></span>
+      <input type="number" min="1" max="999" value="${curQty}" class="obj-qty w-10 bg-zinc-800 border border-zinc-700 rounded text-[11px] font-mono text-zinc-300 text-center px-0.5 py-0.5 outline-none focus:border-amber-500/50 shrink-0" title="Quantity">
     `;
     // Color picker
     row.querySelector('.obj-color').addEventListener('input', (e) => {
@@ -4032,9 +4090,16 @@ function updateObjectsPanel(plate) {
       m.userData.originalColor = col.clone();
       plate.colors = getColors(plate.group);
     });
+    // Quantity input
+    row.querySelector('.obj-qty').addEventListener('change', (e) => {
+      setObjQty(m, e.target.value);
+      e.target.value = getObjQty(m);
+      updateWeightInfo(meshes);
+    });
+    row.querySelector('.obj-qty').addEventListener('click', (e) => e.stopPropagation());
     // Click to select
     row.addEventListener('click', (e) => {
-      if (e.target.classList.contains('obj-color')) return;
+      if (e.target.classList.contains('obj-color') || e.target.classList.contains('obj-qty')) return;
       selectMesh(m);
     });
     objectList.appendChild(row);
@@ -4290,9 +4355,16 @@ function updateQuotePanel() {
   layerHeight = qLayerH;
   selectedInfillType = qInfillType;
 
+  // Calculate per-object weight and apply quantities
   let totalWeight = 0;
+  let totalQty = 0;
+  const perObj = [];
   meshes.forEach(m => {
-    totalWeight += estimateWeight(m.userData.volume, density);
+    const w = estimateWeight(m.userData.volume, density);
+    const qty = getObjQty(m);
+    totalWeight += w * qty;
+    totalQty += qty;
+    perObj.push({ name: m.name || 'Part', weight: w, qty });
   });
 
   // Restore originals
@@ -4321,42 +4393,59 @@ function updateQuotePanel() {
 
   const materialCost = weightKg * effectivePricePerKg;
   const totalBeforeMin = materialCost + matConfig.setupFee;
-  const totalPrice = Math.max(totalBeforeMin, matConfig.minCharge);
+
+  // Apply €5.00 minimum to the total order
+  const MIN_TOTAL = 5.00;
+  const minApplied = totalBeforeMin < MIN_TOTAL;
+  const totalPrice = Math.max(totalBeforeMin, MIN_TOTAL);
   const currency = pricingConfig.currency || 'EUR';
   const symbol = currency === 'EUR' ? '\u20AC' : currency;
+
+  // Build per-item line breakdown
+  let linesHtml = '';
+  perObj.forEach(o => {
+    const unitPrice = (o.weight / 1000) * effectivePricePerKg;
+    const lineTotal = unitPrice * o.qty;
+    const qtyLabel = o.qty > 1 ? `${o.qty}\u00D7 ` : '';
+    if (isGalleryAdmin) {
+      const wStr = o.weight >= 1 ? o.weight.toFixed(1) + 'g' : (o.weight * 1000).toFixed(0) + 'mg';
+      linesHtml += `<div class="flex justify-between"><span class="text-zinc-500">${o.name} (${wStr}) ${qtyLabel}:</span><span class="text-zinc-300">${symbol} ${lineTotal.toFixed(2)}</span></div>`;
+    } else {
+      linesHtml += `<div class="flex justify-between"><span class="text-zinc-500">${o.name} ${qtyLabel}:</span><span class="text-zinc-300">${symbol} ${lineTotal.toFixed(2)}</span></div>`;
+    }
+  });
 
   // Summary — hide weight/volume details for guests
   if (isGalleryAdmin) {
     quoteSummary.innerHTML = `
-      <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${meshes.length}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${meshes.length} (${totalQty} total)</span></div>
       <div class="flex justify-between"><span class="text-zinc-500">Volume:</span><span class="text-zinc-300">${totalVolCm3.toFixed(1)} cm\u00B3</span></div>
       <div class="flex justify-between"><span class="text-zinc-500">Weight:</span><span class="text-zinc-300">${weightStr}</span></div>
     `;
   } else {
     quoteSummary.innerHTML = `
-      <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${meshes.length}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${totalQty > meshes.length ? totalQty + ' total' : meshes.length}</span></div>
     `;
   }
 
-  // Breakdown — hide weight and per-kg pricing for guests
+  // Breakdown with per-item lines
+  let breakdownHtml = linesHtml;
   if (isGalleryAdmin) {
-    quoteBreakdown.innerHTML = `
-      <div class="flex justify-between"><span class="text-zinc-500">${selectedQuoteMaterial} (${weightStr}):</span><span class="text-zinc-300">${symbol} ${materialCost.toFixed(2)}</span></div>
-      <div class="flex justify-between"><span class="text-zinc-500">Setup fee:</span><span class="text-zinc-300">${symbol} ${matConfig.setupFee.toFixed(2)}</span></div>
-      ${totalBeforeMin < matConfig.minCharge ? `<div class="flex justify-between"><span class="text-zinc-500">Min charge:</span><span class="text-zinc-300">${symbol} ${matConfig.minCharge.toFixed(2)}</span></div>` : ''}
-    `;
-  } else {
-    quoteBreakdown.innerHTML = `
-      <div class="flex justify-between"><span class="text-zinc-500">${selectedQuoteMaterial}:</span><span class="text-zinc-300">${symbol} ${materialCost.toFixed(2)}</span></div>
-      ${matConfig.setupFee > 0 ? `<div class="flex justify-between"><span class="text-zinc-500">Setup fee:</span><span class="text-zinc-300">${symbol} ${matConfig.setupFee.toFixed(2)}</span></div>` : ''}
-      ${totalBeforeMin < matConfig.minCharge ? `<div class="flex justify-between"><span class="text-zinc-500">Min charge:</span><span class="text-zinc-300">${symbol} ${matConfig.minCharge.toFixed(2)}</span></div>` : ''}
-    `;
+    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Setup fee:</span><span class="text-zinc-300">${symbol} ${matConfig.setupFee.toFixed(2)}</span></div>`;
+  } else if (matConfig.setupFee > 0) {
+    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Setup fee:</span><span class="text-zinc-300">${symbol} ${matConfig.setupFee.toFixed(2)}</span></div>`;
   }
+  if (minApplied) {
+    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Subtotal:</span><span class="text-zinc-300 line-through">${symbol} ${totalBeforeMin.toFixed(2)}</span></div>`;
+    breakdownHtml += `<div class="flex justify-between"><span class="text-amber-400 text-[10px]">Minimum order: ${symbol}${MIN_TOTAL.toFixed(2)}</span></div>`;
+  }
+  quoteBreakdown.innerHTML = breakdownHtml;
 
   // Total
   quoteTotal.textContent = `${symbol} ${totalPrice.toFixed(2)}`;
 
-  // Store for email — omit weight/volume for guest users
+  // Store for email — include per-item quantities
+  const itemsList = perObj.map(o => `${o.name}${o.qty > 1 ? ' x' + o.qty : ''}`).join(', ');
   quotePanel._lastQuote = {
     material: selectedQuoteMaterial,
     color: selectedQuoteColor?.name || 'Default',
@@ -4366,7 +4455,10 @@ function updateQuotePanel() {
     infill: qInfill + '%',
     infillType: (INFILL_TYPES[qInfillType] || INFILL_TYPES['grid']).label,
     price: `${symbol} ${totalPrice.toFixed(2)}`,
-    parts: meshes.length
+    parts: meshes.length,
+    totalQty: totalQty,
+    items: itemsList,
+    perItem: perObj.map(o => ({ name: o.name, qty: o.qty, weight: o.weight }))
   };
 }
 
@@ -4386,10 +4478,12 @@ if (quoteRequestBtn) {
     if (!q) return;
     const modelName = modelNameText.textContent || 'Unknown Model';
     const subject = encodeURIComponent('3D Print Quote');
+    const qtyLine = q.totalQty > q.parts ? `Quantities: ${q.items}\n` : '';
     const body = encodeURIComponent(
       `Hello,\n\nI would like a quote for 3D printing the following:\n\n` +
       `Model: ${modelName}\n` +
-      `Parts: ${q.parts}\n` +
+      `Parts: ${q.parts}${q.totalQty > q.parts ? ' (' + q.totalQty + ' total)' : ''}\n` +
+      qtyLine +
       `Material: ${q.material}\n` +
       `Color: ${q.color}\n` +
       `Quality: ${q.quality}\n` +
