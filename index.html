@@ -477,6 +477,10 @@
         <span id="infill-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">20%</span>
       </div>
       <div class="flex items-center gap-2">
+        <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-14 shrink-0">Pattern</label>
+        <select id="infill-type-select" class="flex-1 bg-zinc-800 border border-zinc-700 rounded text-[11px] font-mono text-zinc-300 px-1.5 py-0.5 outline-none focus:border-amber-500/50 cursor-pointer"></select>
+      </div>
+      <div class="flex items-center gap-2">
         <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-14 shrink-0">Walls</label>
         <input type="range" id="walls-slider" min="1" max="8" value="3" class="flex-1 accent-amber-500 h-1 cursor-pointer">
         <span id="walls-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">3</span>
@@ -548,6 +552,11 @@
         <span id="quote-infill-val" class="text-[11px] font-mono text-zinc-300">20%</span>
       </div>
       <input type="range" id="quote-infill" min="10" max="100" value="20" step="5" class="w-full accent-amber-500 h-1 cursor-pointer">
+    </div>
+    <!-- Infill pattern -->
+    <div>
+      <div class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider mb-1.5">Infill Pattern</div>
+      <select id="quote-infill-type" class="w-full bg-zinc-800 border border-zinc-700 rounded text-xs font-mono text-zinc-300 px-2 py-1.5 outline-none focus:border-amber-500/50 cursor-pointer"></select>
     </div>
   </div>
   <!-- Price breakdown (sticky bottom) -->
@@ -806,6 +815,21 @@ const MATERIALS = [
 let selectedMaterialIdx = 0;
 let hasFilamentData = false; // true when 3MF provides per-object filament info
 let infillPercent = 20;    // default 20% infill
+
+// Infill type multipliers — relative material density vs baseline grid pattern
+const INFILL_TYPES = {
+  'grid':           { multiplier: 1.00, label: 'Grid',           hint: 'Baseline, balanced' },
+  'lines':          { multiplier: 0.85, label: 'Lines',          hint: 'Less material, weaker' },
+  'triangles':      { multiplier: 1.05, label: 'Triangles',      hint: 'Slightly stronger' },
+  'cubic':          { multiplier: 1.10, label: 'Cubic',          hint: 'Good strength' },
+  'gyroid':         { multiplier: 1.15, label: 'Gyroid',         hint: 'Excellent isotropic strength' },
+  'honeycomb':      { multiplier: 1.10, label: 'Honeycomb',      hint: 'Good compression strength' },
+  'concentric':     { multiplier: 0.90, label: 'Concentric',     hint: 'Good for flexible parts' },
+  'lightning':      { multiplier: 0.70, label: 'Lightning',      hint: 'Minimal, top support only' },
+  'cross':          { multiplier: 0.95, label: 'Cross',          hint: 'Moderate, flexible' },
+  'adaptive_cubic': { multiplier: 1.05, label: 'Adaptive Cubic', hint: 'Variable density, smart' },
+};
+let selectedInfillType = 'grid'; // default infill pattern
 let wallCount = 3;         // number of perimeter walls
 let nozzleDia = 0.4;       // nozzle diameter mm
 let topBottomLayers = 4;   // top/bottom solid layers
@@ -1130,7 +1154,8 @@ function updatePriceQuote() {
   priceQuoteTotal.textContent = `€ ${totalPrice.toFixed(2)}`;
   if (isGalleryAdmin) {
     const weightStr = totalWeight >= 1 ? totalWeight.toFixed(1) + ' g' : (totalWeight * 1000).toFixed(0) + ' mg';
-    priceQuoteDetail.innerHTML = `${materialLabel}<br>${weightStr} × €${pricePerKg.toFixed(2)}/kg`;
+    const infillTypeLabel = (INFILL_TYPES[selectedInfillType] || INFILL_TYPES['grid']).label;
+    priceQuoteDetail.innerHTML = `${materialLabel}<br>${weightStr} × €${pricePerKg.toFixed(2)}/kg<br><span class="text-zinc-500">${infillPercent}% ${infillTypeLabel}</span>`;
   } else {
     // Guest mode: show only material name, no weight breakdown
     priceQuoteDetail.innerHTML = `${materialLabel}`;
@@ -3725,7 +3750,8 @@ function estimateWeight(volumeMm3, overrideDensity) {
   const innerVol = innerW * innerW * innerH;
   const shellVol = side * side * side - innerVol;
   const shellFraction = shellVol / (side * side * side);
-  const infillFraction = (1 - shellFraction) * (infillPercent / 100);
+  const infillMultiplier = (INFILL_TYPES[selectedInfillType] || INFILL_TYPES['grid']).multiplier;
+  const infillFraction = (1 - shellFraction) * (infillPercent / 100) * infillMultiplier;
   const effectiveFill = shellFraction + infillFraction;
   const density = overrideDensity || MATERIALS[selectedMaterialIdx].density;
   return volCm3 * effectiveFill * density;
@@ -4072,7 +4098,7 @@ function updateWeightInfo(meshes) {
       <div class="flex justify-between"><span class="text-zinc-500">Volume:</span><span class="text-zinc-300">${totalVolCm3.toFixed(1)} cm³</span></div>
       <div class="flex justify-between"><span class="text-zinc-500">Weight:</span><span class="text-amber-400 font-semibold">${weightStr}</span></div>
       ${filamentBreakdown}
-      <div class="flex justify-between"><span class="text-zinc-500">Infill:</span><span class="text-zinc-300">${infillPercent}%</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Infill:</span><span class="text-zinc-300">${infillPercent}% ${(INFILL_TYPES[selectedInfillType] || INFILL_TYPES['grid']).label}</span></div>
       <div class="flex justify-between"><span class="text-zinc-500">Walls:</span><span class="text-zinc-300">${wallCount}× ${nozzleDia}mm</span></div>
     `;
   } else {
@@ -4095,6 +4121,7 @@ const quoteTotal = document.getElementById('quote-total');
 const quoteQuality = document.getElementById('quote-quality');
 const quoteInfill = document.getElementById('quote-infill');
 const quoteInfillVal = document.getElementById('quote-infill-val');
+const quoteInfillType = document.getElementById('quote-infill-type');
 const quoteRequestBtn = document.getElementById('quote-request-btn');
 
 async function loadPricingConfig() {
@@ -4253,12 +4280,15 @@ function updateQuotePanel() {
   // Use quote infill/quality settings
   const qInfill = parseInt(quoteInfill.value);
   const qLayerH = parseFloat(quoteQuality.value);
+  const qInfillType = quoteInfillType ? quoteInfillType.value : selectedInfillType;
 
   // Save originals and temporarily override for weight calc
   const origInfill = infillPercent;
   const origLayerH = layerHeight;
+  const origInfillType = selectedInfillType;
   infillPercent = qInfill;
   layerHeight = qLayerH;
+  selectedInfillType = qInfillType;
 
   let totalWeight = 0;
   meshes.forEach(m => {
@@ -4268,6 +4298,7 @@ function updateQuotePanel() {
   // Restore originals
   infillPercent = origInfill;
   layerHeight = origLayerH;
+  selectedInfillType = origInfillType;
 
   const totalVolCm3 = totalVol / 1000;
   const weightKg = totalWeight / 1000;
@@ -4333,6 +4364,7 @@ function updateQuotePanel() {
     volume: isGalleryAdmin ? (totalVolCm3.toFixed(1) + ' cm\u00B3') : null,
     quality: quoteQuality.options[quoteQuality.selectedIndex].text,
     infill: qInfill + '%',
+    infillType: (INFILL_TYPES[qInfillType] || INFILL_TYPES['grid']).label,
     price: `${symbol} ${totalPrice.toFixed(2)}`,
     parts: meshes.length
   };
@@ -4361,7 +4393,7 @@ if (quoteRequestBtn) {
       `Material: ${q.material}\n` +
       `Color: ${q.color}\n` +
       `Quality: ${q.quality}\n` +
-      `Infill: ${q.infill}\n` +
+      `Infill: ${q.infill} (${q.infillType})\n` +
       (q.volume ? `Volume: ${q.volume}\n` : '') +
       (q.weight ? `Estimated Weight: ${q.weight}\n` : '') +
       `Estimated Price: ${q.price}\n\n` +
@@ -4554,6 +4586,30 @@ document.getElementById('walls-slider').oninput = function() {
   document.getElementById('walls-val').textContent = wallCount;
   if (plates.length) updateObjectsPanel(plates[activePlateIndex]);
 };
+
+// ─── Infill type dropdown (sidebar) ───
+(function populateInfillTypeSelects() {
+  const selects = [document.getElementById('infill-type-select'), document.getElementById('quote-infill-type')];
+  selects.forEach(sel => {
+    if (!sel) return;
+    Object.entries(INFILL_TYPES).forEach(([key, cfg]) => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = `${cfg.label} — ${cfg.hint}`;
+      if (key === 'grid') opt.selected = true;
+      sel.appendChild(opt);
+    });
+  });
+})();
+
+document.getElementById('infill-type-select').onchange = function() {
+  selectedInfillType = this.value;
+  if (plates.length) updateObjectsPanel(plates[activePlateIndex]);
+};
+
+if (quoteInfillType) {
+  quoteInfillType.onchange = () => updateQuotePanel();
+}
 
 // ─── Raycaster: click-to-select objects on canvas ───
 let _downX = 0, _downY = 0;
