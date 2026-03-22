@@ -452,31 +452,35 @@
   <div class="text-[11px] font-mono font-semibold uppercase tracking-wider text-zinc-500 px-3 pt-3 pb-1.5">Objects</div>
   <div id="object-list" class="flex-1 overflow-y-auto px-1"></div>
   <div class="border-t border-zinc-700 p-3 space-y-2">
-    <div class="flex items-center gap-2">
-      <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-14 shrink-0">Material</label>
-      <select id="material-select" class="flex-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono text-zinc-300 px-1.5 py-0.5 outline-none focus:border-amber-500/50 cursor-pointer"></select>
+    <div id="admin-print-controls" class="space-y-2 hidden">
+      <div class="flex items-center gap-2">
+        <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-14 shrink-0">Material</label>
+        <select id="material-select" class="flex-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono text-zinc-300 px-1.5 py-0.5 outline-none focus:border-amber-500/50 cursor-pointer"></select>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-14 shrink-0">Layer H</label>
+        <select id="layer-height-select" class="flex-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono text-zinc-300 px-1.5 py-0.5 outline-none focus:border-amber-500/50 cursor-pointer">
+          <option value="0.08">0.08 mm</option>
+          <option value="0.12">0.12 mm</option>
+          <option value="0.16">0.16 mm</option>
+          <option value="0.20" selected>0.20 mm</option>
+          <option value="0.24">0.24 mm</option>
+          <option value="0.28">0.28 mm</option>
+          <option value="0.32">0.32 mm</option>
+        </select>
+      </div>
     </div>
-    <div class="flex items-center gap-2">
-      <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-14 shrink-0">Layer H</label>
-      <select id="layer-height-select" class="flex-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono text-zinc-300 px-1.5 py-0.5 outline-none focus:border-amber-500/50 cursor-pointer">
-        <option value="0.08">0.08 mm</option>
-        <option value="0.12">0.12 mm</option>
-        <option value="0.16">0.16 mm</option>
-        <option value="0.20" selected>0.20 mm</option>
-        <option value="0.24">0.24 mm</option>
-        <option value="0.28">0.28 mm</option>
-        <option value="0.32">0.32 mm</option>
-      </select>
-    </div>
-    <div class="flex items-center gap-2">
-      <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-14 shrink-0">Infill</label>
-      <input type="range" id="infill-slider" min="0" max="100" value="20" class="flex-1 accent-amber-500 h-1 cursor-pointer">
-      <span id="infill-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">20%</span>
-    </div>
-    <div class="flex items-center gap-2">
-      <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-14 shrink-0">Walls</label>
-      <input type="range" id="walls-slider" min="1" max="8" value="3" class="flex-1 accent-amber-500 h-1 cursor-pointer">
-      <span id="walls-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">3</span>
+    <div id="guest-print-controls" class="space-y-2">
+      <div class="flex items-center gap-2">
+        <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-14 shrink-0">Infill</label>
+        <input type="range" id="infill-slider" min="0" max="100" value="20" class="flex-1 accent-amber-500 h-1 cursor-pointer">
+        <span id="infill-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">20%</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider w-14 shrink-0">Walls</label>
+        <input type="range" id="walls-slider" min="1" max="8" value="3" class="flex-1 accent-amber-500 h-1 cursor-pointer">
+        <span id="walls-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">3</span>
+      </div>
     </div>
     <div id="weight-info" class="text-xs font-mono text-zinc-400 leading-relaxed pt-1"></div>
     <!-- Filament Inventory Picker -->
@@ -627,6 +631,7 @@
 
 <!-- ── Bottom Toolbar ── -->
 <div id="bottom-bar" class="fixed bottom-5 left-1/2 -translate-x-1/2 hidden items-center gap-0.5 bg-zinc-900 border border-zinc-700 rounded-full px-2.5 py-1.5 z-[100]">
+  <span id="admin-toolbar-buttons" style="display:contents">
   <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative" id="btn-reset">
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Reset</span>
     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
@@ -690,11 +695,13 @@
     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" fill="currentColor" opacity="0.15"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8" opacity="0.3"/></svg>
   </button>
   <div class="w-px h-5 bg-zinc-700 mx-1"></div>
+  </span>
   <button class="tb-btn active w-auto h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative px-2 gap-1" id="btn-quality">
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Graphics Quality</span>
     <svg class="w-[16px] h-[16px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
     <span id="quality-label" class="text-[10px] font-mono font-semibold uppercase tracking-wider">Ultra</span>
   </button>
+  <span id="admin-toolbar-extra" style="display:contents">
   <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative hidden" id="btn-show-quote">
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Quote</span>
     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
@@ -703,6 +710,7 @@
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Pricing</span>
     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
   </button>
+  </span>
 </div>
 
 <!-- Firebase (Gallery) -->
@@ -969,7 +977,9 @@ function renderFilamentMaterialSelect() {
     const count = filamentByMaterial[mat].length;
     const prices = filamentByMaterial[mat].map(f => f.pricePerKg).filter(p => p > 0);
     const avgPrice = prices.length ? (prices.reduce((a,b) => a+b, 0) / prices.length).toFixed(2) : '?';
-    opt.textContent = `${mat} (${count} color${count !== 1 ? 's' : ''}) — €${avgPrice}/kg`;
+    opt.textContent = isGalleryAdmin
+      ? `${mat} (${count} color${count !== 1 ? 's' : ''}) — €${avgPrice}/kg`
+      : `${mat} (${count} color${count !== 1 ? 's' : ''})`;
     filamentMaterialSelect.appendChild(opt);
   });
 }
@@ -990,7 +1000,9 @@ function renderFilamentColorSwatches(materialName) {
     swatch.dataset.filId = f.id;
     const tip = document.createElement('span');
     tip.className = 'fil-swatch-tip';
-    tip.textContent = `${f.colorName || f.color} — €${(f.pricePerKg || 0).toFixed(2)}/kg`;
+    tip.textContent = isGalleryAdmin
+      ? `${f.colorName || f.color} — €${(f.pricePerKg || 0).toFixed(2)}/kg`
+      : `${f.colorName || f.color}`;
     swatch.appendChild(tip);
     swatch.addEventListener('click', () => selectFilament(f));
     filamentColorSwatches.appendChild(swatch);
@@ -1010,7 +1022,9 @@ function selectFilament(f) {
   // Show info
   if (filamentSelectedInfo) {
     filamentSelectedInfo.classList.remove('hidden');
-    filamentSelectedInfo.innerHTML = `<span class="text-zinc-300">${f.colorName || f.color}</span> · <span class="text-amber-400">€${(f.pricePerKg || 0).toFixed(2)}/kg</span>`;
+    filamentSelectedInfo.innerHTML = isGalleryAdmin
+      ? `<span class="text-zinc-300">${f.colorName || f.color}</span> · <span class="text-amber-400">€${(f.pricePerKg || 0).toFixed(2)}/kg</span>`
+      : `<span class="text-zinc-300">${f.colorName || f.color}</span>`;
   }
   // Apply color to model
   const color = new THREE.Color(f.color || '#f59e0b');
@@ -1114,8 +1128,13 @@ function updatePriceQuote() {
 
   priceQuoteCard.classList.remove('hidden');
   priceQuoteTotal.textContent = `€ ${totalPrice.toFixed(2)}`;
-  const weightStr = totalWeight >= 1 ? totalWeight.toFixed(1) + ' g' : (totalWeight * 1000).toFixed(0) + ' mg';
-  priceQuoteDetail.innerHTML = `${materialLabel}<br>${weightStr} × €${pricePerKg.toFixed(2)}/kg`;
+  if (isGalleryAdmin) {
+    const weightStr = totalWeight >= 1 ? totalWeight.toFixed(1) + ' g' : (totalWeight * 1000).toFixed(0) + ' mg';
+    priceQuoteDetail.innerHTML = `${materialLabel}<br>${weightStr} × €${pricePerKg.toFixed(2)}/kg`;
+  } else {
+    // Guest mode: show only material name, no weight breakdown
+    priceQuoteDetail.innerHTML = `${materialLabel}`;
+  }
   if (priceQuoteHint) priceQuoteHint.classList.add('hidden');
 }
 
@@ -4016,7 +4035,13 @@ function updateWeightInfo(meshes) {
     const w = estimateWeight(vol, filDensity);
     totalW += w;
     const weightEl = rows[i]?.querySelector('.obj-weight');
-    if (weightEl) weightEl.textContent = w >= 1 ? w.toFixed(1) + 'g' : (w * 1000).toFixed(0) + 'mg';
+    if (weightEl) {
+      if (isGalleryAdmin) {
+        weightEl.textContent = w >= 1 ? w.toFixed(1) + 'g' : (w * 1000).toFixed(0) + 'mg';
+      } else {
+        weightEl.textContent = '';
+      }
+    }
   });
 
   const totalVolCm3 = totalVol / 1000;
@@ -4041,13 +4066,18 @@ function updateWeightInfo(meshes) {
     }
   }
 
-  weightInfo.innerHTML = `
-    <div class="flex justify-between"><span class="text-zinc-500">Volume:</span><span class="text-zinc-300">${totalVolCm3.toFixed(1)} cm³</span></div>
-    <div class="flex justify-between"><span class="text-zinc-500">Weight:</span><span class="text-amber-400 font-semibold">${weightStr}</span></div>
-    ${filamentBreakdown}
-    <div class="flex justify-between"><span class="text-zinc-500">Infill:</span><span class="text-zinc-300">${infillPercent}%</span></div>
-    <div class="flex justify-between"><span class="text-zinc-500">Walls:</span><span class="text-zinc-300">${wallCount}× ${nozzleDia}mm</span></div>
-  `;
+  // Hide weight details for public/guest users (non-admin)
+  if (isGalleryAdmin) {
+    weightInfo.innerHTML = `
+      <div class="flex justify-between"><span class="text-zinc-500">Volume:</span><span class="text-zinc-300">${totalVolCm3.toFixed(1)} cm³</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Weight:</span><span class="text-amber-400 font-semibold">${weightStr}</span></div>
+      ${filamentBreakdown}
+      <div class="flex justify-between"><span class="text-zinc-500">Infill:</span><span class="text-zinc-300">${infillPercent}%</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Walls:</span><span class="text-zinc-300">${wallCount}× ${nozzleDia}mm</span></div>
+    `;
+  } else {
+    weightInfo.innerHTML = '';
+  }
   // Update quote panel if in quote mode
   if (isQuoteMode) updateQuotePanel();
   // Always update price quote from filament inventory
@@ -4264,29 +4294,43 @@ function updateQuotePanel() {
   const currency = pricingConfig.currency || 'EUR';
   const symbol = currency === 'EUR' ? '\u20AC' : currency;
 
-  // Summary
-  quoteSummary.innerHTML = `
-    <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${meshes.length}</span></div>
-    <div class="flex justify-between"><span class="text-zinc-500">Volume:</span><span class="text-zinc-300">${totalVolCm3.toFixed(1)} cm\u00B3</span></div>
-    <div class="flex justify-between"><span class="text-zinc-500">Weight:</span><span class="text-zinc-300">${weightStr}</span></div>
-  `;
+  // Summary — hide weight/volume details for guests
+  if (isGalleryAdmin) {
+    quoteSummary.innerHTML = `
+      <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${meshes.length}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Volume:</span><span class="text-zinc-300">${totalVolCm3.toFixed(1)} cm\u00B3</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Weight:</span><span class="text-zinc-300">${weightStr}</span></div>
+    `;
+  } else {
+    quoteSummary.innerHTML = `
+      <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${meshes.length}</span></div>
+    `;
+  }
 
-  // Breakdown
-  quoteBreakdown.innerHTML = `
-    <div class="flex justify-between"><span class="text-zinc-500">${selectedQuoteMaterial} (${weightStr}):</span><span class="text-zinc-300">${symbol} ${materialCost.toFixed(2)}</span></div>
-    <div class="flex justify-between"><span class="text-zinc-500">Setup fee:</span><span class="text-zinc-300">${symbol} ${matConfig.setupFee.toFixed(2)}</span></div>
-    ${totalBeforeMin < matConfig.minCharge ? `<div class="flex justify-between"><span class="text-zinc-500">Min charge:</span><span class="text-zinc-300">${symbol} ${matConfig.minCharge.toFixed(2)}</span></div>` : ''}
-  `;
+  // Breakdown — hide weight and per-kg pricing for guests
+  if (isGalleryAdmin) {
+    quoteBreakdown.innerHTML = `
+      <div class="flex justify-between"><span class="text-zinc-500">${selectedQuoteMaterial} (${weightStr}):</span><span class="text-zinc-300">${symbol} ${materialCost.toFixed(2)}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Setup fee:</span><span class="text-zinc-300">${symbol} ${matConfig.setupFee.toFixed(2)}</span></div>
+      ${totalBeforeMin < matConfig.minCharge ? `<div class="flex justify-between"><span class="text-zinc-500">Min charge:</span><span class="text-zinc-300">${symbol} ${matConfig.minCharge.toFixed(2)}</span></div>` : ''}
+    `;
+  } else {
+    quoteBreakdown.innerHTML = `
+      <div class="flex justify-between"><span class="text-zinc-500">${selectedQuoteMaterial}:</span><span class="text-zinc-300">${symbol} ${materialCost.toFixed(2)}</span></div>
+      ${matConfig.setupFee > 0 ? `<div class="flex justify-between"><span class="text-zinc-500">Setup fee:</span><span class="text-zinc-300">${symbol} ${matConfig.setupFee.toFixed(2)}</span></div>` : ''}
+      ${totalBeforeMin < matConfig.minCharge ? `<div class="flex justify-between"><span class="text-zinc-500">Min charge:</span><span class="text-zinc-300">${symbol} ${matConfig.minCharge.toFixed(2)}</span></div>` : ''}
+    `;
+  }
 
   // Total
   quoteTotal.textContent = `${symbol} ${totalPrice.toFixed(2)}`;
 
-  // Store for email
+  // Store for email — omit weight/volume for guest users
   quotePanel._lastQuote = {
     material: selectedQuoteMaterial,
     color: selectedQuoteColor?.name || 'Default',
-    weight: weightStr,
-    volume: totalVolCm3.toFixed(1) + ' cm\u00B3',
+    weight: isGalleryAdmin ? weightStr : null,
+    volume: isGalleryAdmin ? (totalVolCm3.toFixed(1) + ' cm\u00B3') : null,
     quality: quoteQuality.options[quoteQuality.selectedIndex].text,
     infill: qInfill + '%',
     price: `${symbol} ${totalPrice.toFixed(2)}`,
@@ -4318,8 +4362,8 @@ if (quoteRequestBtn) {
       `Color: ${q.color}\n` +
       `Quality: ${q.quality}\n` +
       `Infill: ${q.infill}\n` +
-      `Volume: ${q.volume}\n` +
-      `Estimated Weight: ${q.weight}\n` +
+      (q.volume ? `Volume: ${q.volume}\n` : '') +
+      (q.weight ? `Estimated Weight: ${q.weight}\n` : '') +
       `Estimated Price: ${q.price}\n\n` +
       `Please confirm availability and final pricing.\n\nThank you`
     );
@@ -5200,6 +5244,36 @@ function applyEmbedMode() {
   });
 }
 
+// ─── Guest/Admin visibility refresh ───
+// When admin-auth state changes, re-render weight info, price quote, and filament picker labels
+window.addEventListener('bsi-admin-auth-changed', () => {
+  // Re-render filament picker labels (to show/hide per-kg pricing)
+  if (Object.keys(filamentByMaterial).length > 0) {
+    renderFilamentMaterialSelect();
+    // Re-render color swatches if a material is selected
+    const currentMat = filamentMaterialSelect?.value;
+    if (currentMat) renderFilamentColorSwatches(currentMat);
+    // Re-render selected info
+    if (selectedFilament) {
+      if (filamentSelectedInfo) {
+        filamentSelectedInfo.innerHTML = isGalleryAdmin
+          ? `<span class="text-zinc-300">${selectedFilament.colorName || selectedFilament.color}</span> · <span class="text-amber-400">\u20AC${(selectedFilament.pricePerKg || 0).toFixed(2)}/kg</span>`
+          : `<span class="text-zinc-300">${selectedFilament.colorName || selectedFilament.color}</span>`;
+      }
+    }
+  }
+  // Refresh weight info and price quote
+  if (plates.length) {
+    const plate = plates[activePlateIndex >= 0 ? activePlateIndex : 0];
+    if (plate) {
+      const meshes = [];
+      plate.group.traverse(c => { if (c.isMesh) meshes.push(c); });
+      updateWeightInfo(meshes);
+    }
+    updatePriceQuote();
+  }
+});
+
 // ─── Boot ───
 initScene().then(() => {
   if (isEmbedMode) {
@@ -5252,6 +5326,30 @@ function toggleAdminPanel() {
   } else {
     adminEl.classList.add('hidden');
   }
+
+  // Show/hide technical print controls (material, layer height) for admin vs guest
+  // Infill and walls are in guest-print-controls and always visible
+  const adminPrintControls = document.getElementById('admin-print-controls');
+  if (adminPrintControls) {
+    if (isGalleryAdmin) {
+      adminPrintControls.classList.remove('hidden');
+    } else {
+      adminPrintControls.classList.add('hidden');
+    }
+  }
+
+  // Show/hide layout toolbar buttons for admin vs guest (quality button stays visible)
+  const adminToolbarBtns = document.getElementById('admin-toolbar-buttons');
+  const adminToolbarExtra = document.getElementById('admin-toolbar-extra');
+  if (adminToolbarBtns) {
+    adminToolbarBtns.style.display = isGalleryAdmin ? 'contents' : 'none';
+  }
+  if (adminToolbarExtra) {
+    adminToolbarExtra.style.display = isGalleryAdmin ? 'contents' : 'none';
+  }
+
+  // Dispatch a custom event so the module script can react to auth changes
+  window.dispatchEvent(new CustomEvent('bsi-admin-auth-changed', { detail: { isAdmin: isGalleryAdmin } }));
 }
 
 // Listen for admin-auth from the portal
