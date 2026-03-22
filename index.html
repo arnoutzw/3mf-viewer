@@ -844,6 +844,30 @@ const INFILL_TYPES = {
   'cross':          { multiplier: 0.95, label: 'Cross',          hint: 'Moderate, flexible' },
   'adaptive_cubic': { multiplier: 1.05, label: 'Adaptive Cubic', hint: 'Variable density, smart' },
 };
+
+// Infill print speeds (mm/s) by pattern type — used for print time estimation
+const INFILL_SPEEDS = {
+  'grid': 150, 'lines': 200, 'triangles': 130, 'cubic': 100,
+  'gyroid': 80, 'honeycomb': 90, 'concentric': 120, 'lightning': 200,
+  'cross': 110, 'adaptive_cubic': 100,
+};
+
+// ─── Pricing Defaults (multi-factor cost model) ───
+const PRICING_DEFAULTS = {
+  electricityPriceKwh: 0.25,    // €/kWh
+  printerWattage: 100,           // Watts
+  printerCost: 750,              // €
+  printerLifetimeHours: 3000,    // hours
+  laborRatePerHour: 35,          // €/hour
+  setupMinutes: 3,               // per print job
+  postProcessMinutes: 2,         // per part
+  packagingMinutes: 2,           // per order
+  marginPercent: 30,             // %
+  perimeterSpeed: 40,            // mm/s
+  nozzleWidth: 0.4,              // mm
+  minimumPrice: 5.00,            // €
+};
+
 let selectedInfillType = 'grid'; // default infill pattern
 let wallCount = 3;         // number of perimeter walls
 let nozzleDia = 0.4;       // nozzle diameter mm
@@ -1154,58 +1178,52 @@ function updatePriceQuote() {
     return;
   }
 
-  // Calculate weight per unit and apply quantities
+  // Determine density
   const density = selectedFilament
     ? (MATERIALS.find(m => m.name === selectedFilament.material || m.name.startsWith(selectedFilament.material))?.density || 1.24)
     : (QUOTE_DENSITY_MAP[selectedQuoteMaterial] || 1.24);
-  let subtotal = 0;
-  let totalQty = 0;
-  const perObj = [];
-  meshes.forEach(m => {
-    if (!m.userData.volume) m.userData.volume = computeMeshVolume(m);
-    const w = estimateWeight(m.userData.volume, density);
-    const qty = getObjQty(m);
-    const unitPrice = (w / 1000) * pricePerKg;
-    const lineTotal = unitPrice * qty;
-    subtotal += lineTotal;
-    totalQty += qty;
-    perObj.push({ name: m.name || 'Part', weight: w, qty, unitPrice, lineTotal });
-  });
 
-  const MIN_TOTAL = 5.00;
-  const minApplied = subtotal < MIN_TOTAL && subtotal > 0;
-  const totalPrice = Math.max(subtotal, MIN_TOTAL);
+  // Merge Firestore pricing overrides with defaults
+  const pCfg = { ...PRICING_DEFAULTS, ...(pricingConfig?.pricingDefaults || {}) };
+
+  // Calculate full multi-factor quote
+  const q = calculateFullQuote(meshes, pricePerKg, density, layerHeight, infillPercent, selectedInfillType, wallCount, pCfg);
 
   priceQuoteCard.classList.remove('hidden');
   if (isGalleryAdmin) {
-    // Admin: full breakdown with quantities
+    // Admin: full cost breakdown
+    const infillTypeLabel = (INFILL_TYPES[selectedInfillType] || INFILL_TYPES['grid']).label;
+    const weightStr = q.totalWeight >= 1 ? q.totalWeight.toFixed(1) + ' g' : (q.totalWeight * 1000).toFixed(0) + ' mg';
     let detailHtml = `${materialLabel}`;
-    if (perObj.length === 1 && perObj[0].qty === 1) {
-      const weightStr = perObj[0].weight >= 1 ? perObj[0].weight.toFixed(1) + ' g' : (perObj[0].weight * 1000).toFixed(0) + ' mg';
-      const infillTypeLabel = (INFILL_TYPES[selectedInfillType] || INFILL_TYPES['grid']).label;
-      detailHtml += `<br>${weightStr} × €${pricePerKg.toFixed(2)}/kg<br><span class="text-zinc-500">${infillPercent}% ${infillTypeLabel}</span>`;
+    detailHtml += `<br><span class="text-zinc-500">Material:</span> €${q.materialCost.toFixed(2)} <span class="text-zinc-600">(${weightStr} × €${pricePerKg.toFixed(2)}/kg)</span>`;
+    detailHtml += `<br><span class="text-zinc-500">Print time:</span> ${q.printTimeFormatted}`;
+    detailHtml += `<br><span class="text-zinc-500">Electricity:</span> €${q.electricityCost.toFixed(2)}`;
+    detailHtml += `<br><span class="text-zinc-500">Depreciation:</span> €${q.depreciationCost.toFixed(2)}`;
+    detailHtml += `<br><span class="text-zinc-500">Labor:</span> €${q.laborCost.toFixed(2)}`;
+    detailHtml += `<br><span class="text-zinc-500">Subtotal:</span> €${q.subtotalCost.toFixed(2)}`;
+    detailHtml += `<br><span class="text-zinc-500">Margin (${q.marginPercent}%):</span> €${q.marginAmount.toFixed(2)}`;
+    if (q.minApplied) {
+      detailHtml += `<br><span class="text-zinc-500 line-through">€${q.finalPriceBeforeMin.toFixed(2)}</span> <span class="text-amber-400">Min €${q.minimumPrice.toFixed(2)}</span>`;
+    }
+    if (q.totalQty > 1) {
+      detailHtml += `<br><span class="text-zinc-500">${infillPercent}% ${infillTypeLabel} · ${q.totalQty} items</span>`;
     } else {
-      perObj.forEach(o => {
-        const qtyStr = o.qty > 1 ? ` ${o.qty}×` : '';
-        detailHtml += `<br><span class="text-zinc-500">${o.name}:</span>${qtyStr} €${o.lineTotal.toFixed(2)}`;
-      });
-    }
-    if (minApplied) {
-      detailHtml += `<br><span class="text-zinc-500 line-through">€${subtotal.toFixed(2)}</span> <span class="text-amber-400">Min €${MIN_TOTAL.toFixed(2)}</span>`;
+      detailHtml += `<br><span class="text-zinc-500">${infillPercent}% ${infillTypeLabel}</span>`;
     }
     priceQuoteDetail.innerHTML = detailHtml;
-    priceQuoteTotal.textContent = `€ ${totalPrice.toFixed(2)}`;
+    priceQuoteTotal.textContent = `€ ${q.totalPrice.toFixed(2)}`;
   } else {
-    // Guest mode: show material + quantity summary, final price only
+    // Guest mode: print time + final price only
     let detailHtml = `${materialLabel}`;
-    if (totalQty > 1) {
-      detailHtml += `<br><span class="text-zinc-500">${totalQty} items</span>`;
+    detailHtml += `<br><span class="text-zinc-500">Est. print time:</span> ${q.printTimeFormatted}`;
+    if (q.totalQty > 1) {
+      detailHtml += `<br><span class="text-zinc-500">${q.totalQty} items</span>`;
     }
-    if (minApplied) {
-      detailHtml += `<br><span class="text-amber-400 text-[9px]">Minimum order: €${MIN_TOTAL.toFixed(2)}</span>`;
+    if (q.minApplied) {
+      detailHtml += `<br><span class="text-amber-400 text-[9px]">Minimum order: €${q.minimumPrice.toFixed(2)}</span>`;
     }
     priceQuoteDetail.innerHTML = detailHtml;
-    priceQuoteTotal.textContent = `€ ${totalPrice.toFixed(2)}`;
+    priceQuoteTotal.textContent = `€ ${q.totalPrice.toFixed(2)}`;
   }
   if (priceQuoteHint) priceQuoteHint.classList.add('hidden');
 }
@@ -3804,6 +3822,146 @@ function estimateWeight(volumeMm3, overrideDensity) {
   return volCm3 * effectiveFill * density;
 }
 
+// ─── Print Time Estimation (slicer-inspired heuristic) ───
+// Estimates print time in seconds from mesh geometry and print settings.
+// Uses bounding-box + volume to approximate per-layer extrusion and travel.
+function estimatePrintTime(meshes, lh, infPct, infType, walls) {
+  if (!meshes || !meshes.length) return 0;
+
+  const nw = PRICING_DEFAULTS.nozzleWidth;   // nozzle width mm
+  const perimSpeed = PRICING_DEFAULTS.perimeterSpeed; // mm/s
+  const infillSpeed = INFILL_SPEEDS[infType] || INFILL_SPEEDS['grid'];
+  const travelSpeed = 150; // mm/s
+  const layerChangeTime = 2; // seconds per layer
+  const setupTime = 5 * 60; // 5 minutes setup in seconds
+
+  let totalSeconds = setupTime;
+
+  meshes.forEach(m => {
+    // Ensure volume is computed
+    if (!m.userData.volume) m.userData.volume = computeMeshVolume(m);
+    const vol = m.userData.volume; // mm³
+    if (vol <= 0) return;
+
+    // Get bounding box for this mesh
+    const box = new THREE.Box3().setFromObject(m);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+
+    const bbHeight = Math.max(size.z, 0.1); // mm (z-up)
+
+    // Average cross-section estimate from volume
+    const avgCrossSection = vol / bbHeight; // mm²
+
+    // Number of layers
+    const numLayers = Math.ceil(bbHeight / lh);
+
+    // Per-layer time estimates
+    const perimeterLength = Math.sqrt(avgCrossSection) * 4 * walls; // mm
+    const perimeterTime = perimeterLength / perimSpeed; // seconds
+
+    const infillLength = (avgCrossSection * infPct / 100) / nw; // mm of infill lines
+    const infillTime = infillLength / infillSpeed; // seconds
+
+    // Travel time estimate (~30% of extrusion time)
+    const extrusionTime = perimeterTime + infillTime;
+    const travelTime = extrusionTime * 0.3;
+
+    const layerTime = extrusionTime + travelTime + layerChangeTime;
+
+    // Total for this mesh (multiply by quantity)
+    const qty = getObjQty(m);
+    totalSeconds += numLayers * layerTime * qty;
+  });
+
+  return totalSeconds;
+}
+
+// Format seconds into "Xh Xm" or "Xm" string
+function formatPrintTime(seconds) {
+  if (!seconds || seconds <= 0) return '0m';
+  const totalMin = Math.round(seconds / 60);
+  if (totalMin < 60) return `${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+// Calculate full multi-factor price quote
+// Returns { materialCost, printTimeSeconds, electricityCost, depreciationCost,
+//           laborCost, subtotalCost, margin, finalPricePerUnit, totalPrice,
+//           printTimeFormatted, totalQty, perObj, weightKg, pricePerKg }
+function calculateFullQuote(meshes, pricePerKg, density, lh, infPct, infType, walls, cfg) {
+  const p = { ...PRICING_DEFAULTS, ...cfg };
+
+  // Weight and per-object breakdown
+  let totalWeight = 0;
+  let totalQty = 0;
+  const perObj = [];
+  meshes.forEach(m => {
+    if (!m.userData.volume) m.userData.volume = computeMeshVolume(m);
+    const w = estimateWeight(m.userData.volume, density);
+    const qty = getObjQty(m);
+    totalWeight += w * qty;
+    totalQty += qty;
+    perObj.push({ name: m.name || 'Part', weight: w, qty, unitPrice: (w / 1000) * pricePerKg, lineTotal: (w / 1000) * pricePerKg * qty });
+  });
+
+  const weightKg = totalWeight / 1000;
+
+  // 1. Material cost
+  const materialCost = weightKg * pricePerKg;
+
+  // 2. Print time estimation
+  const printTimeSeconds = estimatePrintTime(meshes, lh, infPct, infType, walls);
+  const printTimeHours = printTimeSeconds / 3600;
+
+  // 3. Electricity cost
+  const electricityCost = printTimeHours * (p.printerWattage / 1000) * p.electricityPriceKwh;
+
+  // 4. Printer depreciation cost
+  const depreciationPerHour = p.printerCost / p.printerLifetimeHours;
+  const depreciationCost = printTimeHours * depreciationPerHour;
+
+  // 5. Labor cost
+  const laborMinutes = p.setupMinutes + (p.postProcessMinutes * totalQty) + p.packagingMinutes;
+  const laborCost = (laborMinutes / 60) * p.laborRatePerHour;
+
+  // 6. Subtotal
+  const subtotalCost = materialCost + electricityCost + depreciationCost + laborCost;
+
+  // 7. Margin
+  const marginMultiplier = 1 / (1 - p.marginPercent / 100);
+  const finalPriceBeforeMin = subtotalCost * marginMultiplier;
+  const marginAmount = finalPriceBeforeMin - subtotalCost;
+
+  // 8. Apply minimum and quantity
+  const totalPrice = Math.max(finalPriceBeforeMin, p.minimumPrice);
+  const minApplied = finalPriceBeforeMin < p.minimumPrice && finalPriceBeforeMin > 0;
+
+  return {
+    materialCost,
+    printTimeSeconds,
+    printTimeHours,
+    printTimeFormatted: formatPrintTime(printTimeSeconds),
+    electricityCost,
+    depreciationCost,
+    laborCost,
+    subtotalCost,
+    marginAmount,
+    marginPercent: p.marginPercent,
+    finalPriceBeforeMin,
+    totalPrice,
+    minApplied,
+    minimumPrice: p.minimumPrice,
+    totalQty,
+    perObj,
+    weightKg,
+    totalWeight,
+    pricePerKg,
+  };
+}
+
 // ─── Object selection ───
 function selectMesh(mesh) {
   // Deselect previous
@@ -4332,7 +4490,7 @@ function updateQuotePanel() {
     return;
   }
 
-  // Compute total volume and weight
+  // Compute total volume
   let totalVol = 0;
   meshes.forEach(m => {
     if (!m.userData.volume) m.userData.volume = computeMeshVolume(m);
@@ -4347,7 +4505,7 @@ function updateQuotePanel() {
   const qLayerH = parseFloat(quoteQuality.value);
   const qInfillType = quoteInfillType ? quoteInfillType.value : selectedInfillType;
 
-  // Save originals and temporarily override for weight calc
+  // Save originals and temporarily override for weight + print time calc
   const origInfill = infillPercent;
   const origLayerH = layerHeight;
   const origInfillType = selectedInfillType;
@@ -4355,32 +4513,10 @@ function updateQuotePanel() {
   layerHeight = qLayerH;
   selectedInfillType = qInfillType;
 
-  // Calculate per-object weight and apply quantities
-  let totalWeight = 0;
-  let totalQty = 0;
-  const perObj = [];
-  meshes.forEach(m => {
-    const w = estimateWeight(m.userData.volume, density);
-    const qty = getObjQty(m);
-    totalWeight += w * qty;
-    totalQty += qty;
-    perObj.push({ name: m.name || 'Part', weight: w, qty });
-  });
-
-  // Restore originals
-  infillPercent = origInfill;
-  layerHeight = origLayerH;
-  selectedInfillType = origInfillType;
-
-  const totalVolCm3 = totalVol / 1000;
-  const weightKg = totalWeight / 1000;
-  const weightStr = totalWeight >= 1 ? totalWeight.toFixed(1) + ' g' : (totalWeight * 1000).toFixed(0) + ' mg';
-
   // Pricing — use filament-specific price if a specific inventory color is selected
   const matConfig = pricingConfig.materials[selectedQuoteMaterial];
-  if (!matConfig) return;
+  if (!matConfig) { infillPercent = origInfill; layerHeight = origLayerH; selectedInfillType = origInfillType; return; }
 
-  // Check if the selected color maps to a specific filament with its own price
   let effectivePricePerKg = matConfig.pricePerKg;
   if (selectedQuoteColor && filamentByMaterial[selectedQuoteMaterial]) {
     const matchingFil = filamentByMaterial[selectedQuoteMaterial].find(f =>
@@ -4391,61 +4527,70 @@ function updateQuotePanel() {
     }
   }
 
-  const materialCost = weightKg * effectivePricePerKg;
-  const totalBeforeMin = materialCost + matConfig.setupFee;
+  // Merge Firestore pricing overrides with defaults
+  const pCfg = { ...PRICING_DEFAULTS, ...(pricingConfig?.pricingDefaults || {}) };
 
-  // Apply €5.00 minimum to the total order
-  const MIN_TOTAL = 5.00;
-  const minApplied = totalBeforeMin < MIN_TOTAL;
-  const totalPrice = Math.max(totalBeforeMin, MIN_TOTAL);
+  // Calculate full multi-factor quote
+  const q = calculateFullQuote(meshes, effectivePricePerKg, density, qLayerH, qInfill, qInfillType, wallCount, pCfg);
+
+  // Restore originals
+  infillPercent = origInfill;
+  layerHeight = origLayerH;
+  selectedInfillType = origInfillType;
+
+  const totalVolCm3 = totalVol / 1000;
+  const weightStr = q.totalWeight >= 1 ? q.totalWeight.toFixed(1) + ' g' : (q.totalWeight * 1000).toFixed(0) + ' mg';
   const currency = pricingConfig.currency || 'EUR';
   const symbol = currency === 'EUR' ? '\u20AC' : currency;
 
-  // Build per-item line breakdown
-  let linesHtml = '';
-  perObj.forEach(o => {
-    const unitPrice = (o.weight / 1000) * effectivePricePerKg;
-    const lineTotal = unitPrice * o.qty;
-    const qtyLabel = o.qty > 1 ? `${o.qty}\u00D7 ` : '';
-    if (isGalleryAdmin) {
-      const wStr = o.weight >= 1 ? o.weight.toFixed(1) + 'g' : (o.weight * 1000).toFixed(0) + 'mg';
-      linesHtml += `<div class="flex justify-between"><span class="text-zinc-500">${o.name} (${wStr}) ${qtyLabel}:</span><span class="text-zinc-300">${symbol} ${lineTotal.toFixed(2)}</span></div>`;
-    } else {
-      linesHtml += `<div class="flex justify-between"><span class="text-zinc-500">${o.name} ${qtyLabel}:</span><span class="text-zinc-300">${symbol} ${lineTotal.toFixed(2)}</span></div>`;
-    }
-  });
-
-  // Summary — hide weight/volume details for guests
+  // Summary — hide cost details for guests
   if (isGalleryAdmin) {
     quoteSummary.innerHTML = `
-      <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${meshes.length} (${totalQty} total)</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${meshes.length} (${q.totalQty} total)</span></div>
       <div class="flex justify-between"><span class="text-zinc-500">Volume:</span><span class="text-zinc-300">${totalVolCm3.toFixed(1)} cm\u00B3</span></div>
       <div class="flex justify-between"><span class="text-zinc-500">Weight:</span><span class="text-zinc-300">${weightStr}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Est. print time:</span><span class="text-zinc-300">${q.printTimeFormatted}</span></div>
     `;
   } else {
     quoteSummary.innerHTML = `
-      <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${totalQty > meshes.length ? totalQty + ' total' : meshes.length}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Parts:</span><span class="text-zinc-300">${q.totalQty > meshes.length ? q.totalQty + ' total' : meshes.length}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Est. print time:</span><span class="text-zinc-300">${q.printTimeFormatted}</span></div>
     `;
   }
 
-  // Breakdown with per-item lines
-  let breakdownHtml = linesHtml;
+  // Breakdown — full cost model for admin, simplified for guests
+  let breakdownHtml = '';
   if (isGalleryAdmin) {
-    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Setup fee:</span><span class="text-zinc-300">${symbol} ${matConfig.setupFee.toFixed(2)}</span></div>`;
-  } else if (matConfig.setupFee > 0) {
-    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Setup fee:</span><span class="text-zinc-300">${symbol} ${matConfig.setupFee.toFixed(2)}</span></div>`;
+    // Per-item material lines
+    q.perObj.forEach(o => {
+      const wStr = o.weight >= 1 ? o.weight.toFixed(1) + 'g' : (o.weight * 1000).toFixed(0) + 'mg';
+      const qtyLabel = o.qty > 1 ? `${o.qty}\u00D7 ` : '';
+      breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">${o.name} (${wStr}) ${qtyLabel}:</span><span class="text-zinc-300">${symbol} ${o.lineTotal.toFixed(2)}</span></div>`;
+    });
+    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Material cost:</span><span class="text-zinc-300">${symbol} ${q.materialCost.toFixed(2)}</span></div>`;
+    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Electricity:</span><span class="text-zinc-300">${symbol} ${q.electricityCost.toFixed(2)}</span></div>`;
+    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Depreciation:</span><span class="text-zinc-300">${symbol} ${q.depreciationCost.toFixed(2)}</span></div>`;
+    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Labor:</span><span class="text-zinc-300">${symbol} ${q.laborCost.toFixed(2)}</span></div>`;
+    breakdownHtml += `<div class="flex justify-between border-t border-zinc-700 mt-1 pt-1"><span class="text-zinc-500">Subtotal cost:</span><span class="text-zinc-300">${symbol} ${q.subtotalCost.toFixed(2)}</span></div>`;
+    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Margin (${q.marginPercent}%):</span><span class="text-zinc-300">${symbol} ${q.marginAmount.toFixed(2)}</span></div>`;
+  } else {
+    // Guest: per-item price lines only
+    q.perObj.forEach(o => {
+      const qtyLabel = o.qty > 1 ? `${o.qty}\u00D7 ` : '';
+      breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">${o.name} ${qtyLabel}:</span><span class="text-zinc-300">${symbol} ${o.lineTotal.toFixed(2)}</span></div>`;
+    });
   }
-  if (minApplied) {
-    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Subtotal:</span><span class="text-zinc-300 line-through">${symbol} ${totalBeforeMin.toFixed(2)}</span></div>`;
-    breakdownHtml += `<div class="flex justify-between"><span class="text-amber-400 text-[10px]">Minimum order: ${symbol}${MIN_TOTAL.toFixed(2)}</span></div>`;
+  if (q.minApplied) {
+    breakdownHtml += `<div class="flex justify-between"><span class="text-zinc-500">Subtotal:</span><span class="text-zinc-300 line-through">${symbol} ${q.finalPriceBeforeMin.toFixed(2)}</span></div>`;
+    breakdownHtml += `<div class="flex justify-between"><span class="text-amber-400 text-[10px]">Minimum order: ${symbol}${q.minimumPrice.toFixed(2)}</span></div>`;
   }
   quoteBreakdown.innerHTML = breakdownHtml;
 
   // Total
-  quoteTotal.textContent = `${symbol} ${totalPrice.toFixed(2)}`;
+  quoteTotal.textContent = `${symbol} ${q.totalPrice.toFixed(2)}`;
 
-  // Store for email — include per-item quantities
-  const itemsList = perObj.map(o => `${o.name}${o.qty > 1 ? ' x' + o.qty : ''}`).join(', ');
+  // Store for email — include per-item quantities and print time
+  const itemsList = q.perObj.map(o => `${o.name}${o.qty > 1 ? ' x' + o.qty : ''}`).join(', ');
   quotePanel._lastQuote = {
     material: selectedQuoteMaterial,
     color: selectedQuoteColor?.name || 'Default',
@@ -4454,11 +4599,12 @@ function updateQuotePanel() {
     quality: quoteQuality.options[quoteQuality.selectedIndex].text,
     infill: qInfill + '%',
     infillType: (INFILL_TYPES[qInfillType] || INFILL_TYPES['grid']).label,
-    price: `${symbol} ${totalPrice.toFixed(2)}`,
+    printTime: q.printTimeFormatted,
+    price: `${symbol} ${q.totalPrice.toFixed(2)}`,
     parts: meshes.length,
-    totalQty: totalQty,
+    totalQty: q.totalQty,
     items: itemsList,
-    perItem: perObj.map(o => ({ name: o.name, qty: o.qty, weight: o.weight }))
+    perItem: q.perObj.map(o => ({ name: o.name, qty: o.qty, weight: o.weight }))
   };
 }
 
@@ -4490,6 +4636,7 @@ if (quoteRequestBtn) {
       `Infill: ${q.infill} (${q.infillType})\n` +
       (q.volume ? `Volume: ${q.volume}\n` : '') +
       (q.weight ? `Estimated Weight: ${q.weight}\n` : '') +
+      (q.printTime ? `Estimated Print Time: ${q.printTime}\n` : '') +
       `Estimated Price: ${q.price}\n\n` +
       `Please confirm availability and final pricing.\n\nThank you`
     );
