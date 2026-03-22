@@ -263,6 +263,14 @@
     [data-theme="light"] .fil-swatch:hover { border-color: rgba(16,6,159,0.4); }
     [data-theme="light"] .fil-swatch.active { border-color: #10069f; box-shadow: 0 0 6px rgba(16,6,159,0.3); }
     [data-theme="light"] .fil-swatch .fil-swatch-tip { background: #fff; border-color: #d4d4d8; color: #27272a; }
+    /* ── Floating Quote Card ── */
+    [data-theme="light"] #price-quote-card > div {
+      background: rgba(255,255,255,0.95); border-color: #d4d4d8;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    }
+    [data-theme="light"] #price-quote-card .text-amber-500 { color: #10069f; }
+    [data-theme="light"] #price-quote-close { color: #a1a1aa; }
+    [data-theme="light"] #price-quote-close:hover { color: #52525b; }
 
     /* ── Quote Panel ── */
     .quote-mat-btn {
@@ -480,14 +488,24 @@
       <div id="filament-color-swatches" class="flex flex-wrap gap-1.5 hidden"></div>
       <div id="filament-selected-info" class="text-[10px] font-mono text-zinc-500 hidden"></div>
     </div>
-    <!-- Price Quote (always visible when model loaded) -->
-    <div id="price-quote-bar" class="hidden pt-2 border-t border-zinc-700 mt-2">
-      <div class="flex items-baseline justify-between">
-        <span class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Quote</span>
-        <span id="price-quote-total" class="text-lg font-mono font-bold text-amber-500">--</span>
+  </div>
+</div>
+
+<!-- ── Floating Price Quote Card (centered on screen, dismissable) ── -->
+<div id="price-quote-card" class="fixed z-[105] hidden" style="bottom:80px;left:50%;transform:translateX(-50%);">
+  <div class="bg-zinc-900/95 backdrop-blur-md border border-zinc-700 rounded-xl shadow-2xl px-5 py-3.5 min-w-[260px] max-w-[360px]" style="box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <svg class="w-4 h-4 text-amber-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        <span class="text-[11px] font-mono font-semibold uppercase tracking-wider text-amber-500">Print Quote</span>
       </div>
-      <div id="price-quote-detail" class="text-[10px] font-mono text-zinc-500 leading-relaxed mt-0.5"></div>
+      <button id="price-quote-close" class="text-zinc-500 hover:text-zinc-300 cursor-pointer text-sm leading-none -mt-0.5 transition-colors" title="Dismiss">&times;</button>
     </div>
+    <div class="flex items-baseline justify-between mt-2">
+      <div id="price-quote-detail" class="text-[11px] font-mono text-zinc-400 leading-relaxed"></div>
+      <span id="price-quote-total" class="text-2xl font-mono font-bold text-amber-500 ml-4 whitespace-nowrap">--</span>
+    </div>
+    <div id="price-quote-hint" class="text-[9px] font-mono text-zinc-600 mt-1">Select a filament to see price</div>
   </div>
 </div>
 
@@ -677,9 +695,13 @@
     <svg class="w-[16px] h-[16px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
     <span id="quality-label" class="text-[10px] font-mono font-semibold uppercase tracking-wider">Ultra</span>
   </button>
+  <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative hidden" id="btn-show-quote">
+    <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Quote</span>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+  </button>
   <button class="tb-btn w-9 h-9 border-0 bg-transparent text-zinc-500 rounded-full cursor-pointer flex items-center justify-center relative hidden" id="btn-pricing-admin">
     <span class="tooltip absolute bottom-11 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-mono px-2 py-0.5 rounded whitespace-nowrap opacity-0 pointer-events-none">Pricing</span>
-    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+    <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
   </button>
 </div>
 
@@ -839,7 +861,7 @@ const filamentPicker = document.getElementById('filament-picker');
 const filamentMaterialSelect = document.getElementById('filament-material-select');
 const filamentColorSwatches = document.getElementById('filament-color-swatches');
 const filamentSelectedInfo = document.getElementById('filament-selected-info');
-const priceQuoteBar = document.getElementById('price-quote-bar');
+const priceQuoteCard = document.getElementById('price-quote-card');
 const priceQuoteTotal = document.getElementById('price-quote-total');
 const priceQuoteDetail = document.getElementById('price-quote-detail');
 
@@ -1014,14 +1036,44 @@ function selectFilament(f) {
   if (plates.length) updateObjectsPanel(plates[activePlateIndex]);
 }
 
+let quoteCardDismissed = false; // user dismissed the floating quote card
+const priceQuoteHint = document.getElementById('price-quote-hint');
+const btnShowQuote = document.getElementById('btn-show-quote');
+
+function showQuoteCard() {
+  if (!priceQuoteCard) return;
+  priceQuoteCard.classList.remove('hidden');
+  quoteCardDismissed = false;
+  if (btnShowQuote) btnShowQuote.classList.add('hidden');
+}
+
+function hideQuoteCard() {
+  if (!priceQuoteCard) return;
+  priceQuoteCard.classList.add('hidden');
+  quoteCardDismissed = true;
+  // Show toolbar button so user can re-open
+  if (btnShowQuote && plates.length) btnShowQuote.classList.remove('hidden');
+}
+
+// Wire up dismiss & re-open
+if (document.getElementById('price-quote-close')) {
+  document.getElementById('price-quote-close').onclick = hideQuoteCard;
+}
+if (btnShowQuote) {
+  btnShowQuote.onclick = () => { showQuoteCard(); updatePriceQuote(); };
+}
+
 function updatePriceQuote() {
-  if (!priceQuoteBar || !plates.length) return;
+  if (!priceQuoteCard || !plates.length) return;
+  // Don't show if user dismissed it (toolbar button is visible instead)
+  if (quoteCardDismissed) return;
+
   // Gather meshes from active plate
   const meshes = [];
   const plate = plates[activePlateIndex >= 0 ? activePlateIndex : 0];
   if (plate) plate.group.traverse(c => { if (c.isMesh) meshes.push(c); });
   if (!meshes.length) {
-    priceQuoteBar.classList.add('hidden');
+    priceQuoteCard.classList.add('hidden');
     return;
   }
 
@@ -1037,9 +1089,10 @@ function updatePriceQuote() {
   }
 
   if (pricePerKg <= 0) {
-    priceQuoteBar.classList.remove('hidden');
+    priceQuoteCard.classList.remove('hidden');
     priceQuoteTotal.textContent = '--';
-    priceQuoteDetail.textContent = 'Select a filament to see price';
+    priceQuoteDetail.innerHTML = '';
+    if (priceQuoteHint) { priceQuoteHint.classList.remove('hidden'); priceQuoteHint.textContent = 'Select a filament to see price'; }
     return;
   }
 
@@ -1059,10 +1112,11 @@ function updatePriceQuote() {
   const materialCost = weightKg * pricePerKg;
   const totalPrice = Math.max(materialCost, 0);
 
-  priceQuoteBar.classList.remove('hidden');
+  priceQuoteCard.classList.remove('hidden');
   priceQuoteTotal.textContent = `€ ${totalPrice.toFixed(2)}`;
   const weightStr = totalWeight >= 1 ? totalWeight.toFixed(1) + ' g' : (totalWeight * 1000).toFixed(0) + ' mg';
   priceQuoteDetail.innerHTML = `${materialLabel}<br>${weightStr} × €${pricePerKg.toFixed(2)}/kg`;
+  if (priceQuoteHint) priceQuoteHint.classList.add('hidden');
 }
 
 // Filament picker events
@@ -3894,7 +3948,8 @@ function updateUI(fileName) {
   // Show filament picker & quote if inventory is loaded
   if (filamentPicker && Object.keys(filamentByMaterial).length > 0) {
     filamentPicker.classList.remove('hidden');
-    priceQuoteBar.classList.remove('hidden');
+    quoteCardDismissed = false; // reset dismiss on new model load
+    showQuoteCard();
     updatePriceQuote();
   }
   bottomBar.style.display = 'flex';
