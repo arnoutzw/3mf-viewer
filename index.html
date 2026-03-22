@@ -140,6 +140,52 @@
 
     /* Light: FPS counter */
     [data-theme="light"] #fps-counter { background: rgba(255,255,255,0.75) !important; color: #081249 !important; }
+
+    /* ── Gallery ── */
+    .gallery-card {
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .gallery-card:hover {
+      border-color: rgba(245,158,11,0.5) !important;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    #gallery-panel {
+      animation: gallerySlideIn 0.25s ease-out;
+    }
+    @keyframes gallerySlideIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Light: gallery */
+    [data-theme="light"] .gallery-card {
+      background-color: #ffffff !important;
+      border-color: #cfd3e8 !important;
+    }
+    [data-theme="light"] .gallery-card:hover {
+      border-color: rgba(16,6,159,0.5) !important;
+      box-shadow: 0 4px 12px rgba(16,6,159,0.1);
+    }
+    [data-theme="light"] #gallery-panel {
+      background-color: rgba(239,242,244,0.97) !important;
+    }
+    [data-theme="light"] .gallery-search {
+      background-color: #f5f6f8 !important;
+      border-color: #cfd3e8 !important;
+      color: #081249 !important;
+    }
+    [data-theme="light"] .gallery-search::placeholder {
+      color: #4a5280 !important;
+    }
+    [data-theme="light"] .gallery-search:focus {
+      border-color: rgba(16,6,159,0.5) !important;
+    }
+    [data-theme="light"] .gallery-tag {
+      background-color: rgba(16,6,159,0.08) !important;
+      color: #10069f !important;
+    }
   </style>
 </head>
 <body class="bg-zinc-950 text-zinc-100 font-sans">
@@ -155,6 +201,23 @@
   <p class="text-zinc-500 text-sm font-mono mb-5">3MF &middot; STL &middot; OBJ &middot; STEP &middot; DXF &middot; works offline</p>
   <button class="bg-amber-500 hover:bg-amber-400 text-zinc-900 font-mono font-bold px-6 py-2.5 rounded-lg transition-colors cursor-pointer" id="browse-btn">Open File</button>
   <input type="file" id="file-input" accept=".3mf,.stl,.obj,.step,.stp,.dxf" hidden>
+  <div class="text-zinc-600 text-xs font-mono my-3">&mdash; or &mdash;</div>
+  <button class="bg-zinc-900 border border-zinc-700 hover:border-amber-500/50 text-zinc-400 hover:text-amber-400 font-mono font-semibold px-5 py-2 rounded-lg transition-colors cursor-pointer flex items-center gap-2 text-sm" id="gallery-btn">
+    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    Browse Gallery
+  </button>
+  <!-- Gallery Panel -->
+  <div id="gallery-panel" class="absolute inset-0 bg-zinc-950/[.97] backdrop-blur-sm z-10 hidden flex-col p-6 overflow-hidden">
+    <div class="flex items-center gap-3 mb-4">
+      <button id="gallery-back" class="text-zinc-400 hover:text-amber-400 transition-colors cursor-pointer p-1">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h3 class="font-mono font-bold text-amber-500 text-lg flex-1">Model Gallery</h3>
+      <input type="text" id="gallery-search" class="gallery-search bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-mono text-zinc-300 placeholder-zinc-500 outline-none focus:border-amber-500/50 w-48 transition-colors" placeholder="Search models...">
+    </div>
+    <div id="gallery-grid" class="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3 content-start"></div>
+    <div id="gallery-empty" class="hidden flex-1 flex items-center justify-center text-zinc-500 text-sm font-mono">No models found</div>
+  </div>
 </div>
 
 <!-- ── Loading Overlay ── -->
@@ -179,6 +242,10 @@
     <button id="open-btn" class="model-name-hidden bg-zinc-900 border border-zinc-700 hover:border-amber-500/50 text-zinc-400 hover:text-amber-400 px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer">
       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       Open
+    </button>
+    <button id="gallery-topbar-btn" class="model-name-hidden bg-zinc-900 border border-zinc-700 hover:border-amber-500/50 text-zinc-400 hover:text-amber-400 px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Gallery
     </button>
   </div>
 </div>
@@ -345,6 +412,29 @@
     <span id="quality-label" class="text-[10px] font-mono font-semibold uppercase tracking-wider">Ultra</span>
   </button>
 </div>
+
+<!-- Firebase (Gallery) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<script>
+const _GALLERY_FB_CONFIG = {
+  apiKey: "AIzaSyAJ6y1Jz8OHj2gbnWRZIk1TGZLcggvAMQ4",
+  authDomain: "arnout-s-homelab.firebaseapp.com",
+  projectId: "arnout-s-homelab",
+  storageBucket: "arnout-s-homelab.firebasestorage.app",
+  messagingSenderId: "258011834485",
+  appId: "1:258011834485:web:5afb1efaa303b4dd93f03c",
+};
+let galleryDb, galleryStorage;
+try {
+  const app = firebase.initializeApp(_GALLERY_FB_CONFIG);
+  galleryDb = app.firestore();
+  galleryStorage = app.storage();
+} catch(e) {
+  try { const app = firebase.app(); galleryDb = app.firestore(); galleryStorage = app.storage(); } catch(e2) {}
+}
+</script>
 
 <!-- Dependencies -->
 <script type="importmap">
@@ -3223,6 +3313,7 @@ function updateUI(fileName) {
   modelNameText.textContent = fileName.replace(/\.\w+$/, '');
   modelNameEl.classList.remove('model-name-hidden');
   openBtn.classList.remove('model-name-hidden');
+  document.getElementById('gallery-topbar-btn').classList.remove('model-name-hidden');
   plateList.innerHTML = '';
   if (plates.length > 1) {
     // "All Plates" item
@@ -3799,6 +3890,121 @@ document.addEventListener('keydown', e => {
 
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 
+// ─── Gallery ───
+const galleryPanel = document.getElementById('gallery-panel');
+const galleryGrid = document.getElementById('gallery-grid');
+const galleryEmpty = document.getElementById('gallery-empty');
+const gallerySearch = document.getElementById('gallery-search');
+let galleryModels = [];
+let galleryLoaded = false;
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+}
+
+async function loadGallery() {
+  if (!galleryDb) { console.warn('Gallery: Firestore not available'); return; }
+  if (galleryLoaded) { renderGallery(galleryModels); return; }
+  galleryGrid.innerHTML = '<div class="col-span-full text-center text-zinc-500 text-sm font-mono py-8">Loading gallery...</div>';
+  galleryEmpty.classList.add('hidden');
+  galleryGrid.classList.remove('hidden');
+  try {
+    const snap = await galleryDb.collection('gallery_models')
+      .where('visible', '==', true)
+      .orderBy('uploadedAt', 'desc')
+      .get();
+    galleryModels = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    galleryLoaded = true;
+    renderGallery(galleryModels);
+  } catch (err) {
+    console.error('Gallery load error:', err);
+    galleryGrid.innerHTML = '<div class="col-span-full text-center text-zinc-500 text-sm font-mono py-8">Could not load gallery</div>';
+  }
+}
+
+function renderGallery(models) {
+  galleryGrid.innerHTML = '';
+  if (models.length === 0) {
+    galleryGrid.classList.add('hidden');
+    galleryEmpty.classList.remove('hidden');
+    return;
+  }
+  galleryEmpty.classList.add('hidden');
+  galleryGrid.classList.remove('hidden');
+  models.forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'gallery-card bg-zinc-900 border border-zinc-700 rounded-lg p-3 flex flex-col gap-2';
+    const typeUpper = (m.fileType || '').toUpperCase();
+    const tagsHtml = (m.tags || []).slice(0, 3).map(t =>
+      `<span class="gallery-tag bg-amber-500/10 text-amber-500 text-[9px] font-mono px-1.5 py-0.5 rounded">${t}</span>`
+    ).join('');
+    card.innerHTML = `
+      <div class="flex items-center gap-2">
+        <svg class="w-8 h-8 text-amber-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l9 4.5v11L12 22l-9-4.5v-11z"/><path d="M12 22V12"/><path d="M3 6.5l9 5"/><path d="M21 6.5l-9 5"/></svg>
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-mono text-zinc-100 truncate font-semibold">${m.name || m.fileName}</div>
+          <div class="flex items-center gap-2 mt-0.5">
+            ${typeUpper ? `<span class="bg-zinc-800 text-zinc-400 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase">${typeUpper}</span>` : ''}
+            <span class="text-zinc-500 text-[10px] font-mono">${formatFileSize(m.fileSize)}</span>
+          </div>
+        </div>
+      </div>
+      ${m.description ? `<div class="text-zinc-500 text-[11px] font-mono leading-relaxed line-clamp-2">${m.description}</div>` : ''}
+      ${tagsHtml ? `<div class="flex flex-wrap gap-1">${tagsHtml}</div>` : ''}
+    `;
+    card.onclick = () => loadGalleryModel(m);
+    galleryGrid.appendChild(card);
+  });
+}
+
+function loadGalleryModel(model) {
+  galleryPanel.style.display = 'none';
+  galleryPanel.classList.add('hidden');
+  loadFromUrl(model.downloadUrl);
+}
+
+function filterGallery(query) {
+  if (!query) { renderGallery(galleryModels); return; }
+  const q = query.toLowerCase();
+  const filtered = galleryModels.filter(m => {
+    const name = (m.name || '').toLowerCase();
+    const desc = (m.description || '').toLowerCase();
+    const tags = (m.tags || []).join(' ').toLowerCase();
+    const ft = (m.fileType || '').toLowerCase();
+    return name.includes(q) || desc.includes(q) || tags.includes(q) || ft.includes(q);
+  });
+  renderGallery(filtered);
+}
+
+// Gallery button on drop zone
+document.getElementById('gallery-btn').onclick = () => {
+  galleryPanel.style.display = 'flex';
+  galleryPanel.classList.remove('hidden');
+  gallerySearch.value = '';
+  loadGallery();
+};
+
+// Gallery back button
+document.getElementById('gallery-back').onclick = () => {
+  galleryPanel.style.display = 'none';
+  galleryPanel.classList.add('hidden');
+};
+
+// Gallery search
+gallerySearch.oninput = () => filterGallery(gallerySearch.value.trim());
+
+// Gallery top-bar button: re-show drop zone with gallery open
+document.getElementById('gallery-topbar-btn').onclick = () => {
+  dropZone.classList.remove('hidden');
+  galleryPanel.style.display = 'flex';
+  galleryPanel.classList.remove('hidden');
+  gallerySearch.value = '';
+  loadGallery();
+};
+
 // ─── Embed Mode: fetch and load file from URL ───
 async function loadFromUrl(url) {
   const fileName = decodeURIComponent(url.split('/').pop().split('?')[0]) || 'model';
@@ -3831,6 +4037,8 @@ function applyEmbedMode() {
 
   // Hide all non-essential UI
   dropZone.classList.add('hidden');
+  galleryPanel.style.display = 'none';
+  galleryPanel.classList.add('hidden');
   document.getElementById('top-bar').style.display = 'none';
   plateSidebar.classList.add('hidden');
   objectsPanel.classList.add('hidden');
