@@ -3,11 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Bambu 3MF Viewer | Black Sphere Industries</title>
+  <meta name="description" content="Preview and inspect 3MF files from Bambu Lab 3D printers with layer-by-layer slicing visualization and multi-color support.">
+  <link rel="canonical" href="https://blacksphereindustries.nl/bambu-viewer/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Bambu 3MF Viewer | Black Sphere Industries">
+  <meta property="og:description" content="Preview and inspect 3MF files from Bambu Lab 3D printers with layer-by-layer slicing visualization and multi-color support.">
+  <meta property="og:url" content="https://blacksphereindustries.nl/bambu-viewer/">
+  <meta property="og:image" content="https://blacksphereindustries.nl/og-image.png">
+  <meta property="og:site_name" content="Black Sphere Industries">
   <meta name="theme-color" content="#09090b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.json">
-  <title>Bambu 3MF Viewer</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>
@@ -4801,6 +4809,13 @@ function applyEmbedMode() {
         break;
       case 'theme-change':
         if (e.data.theme) applyBambuTheme(e.data.theme);
+        if (e.data.accentColor) {
+          document.documentElement.style.setProperty('--bsi-accent', e.data.accentColor);
+          document.documentElement.style.setProperty('--bsi-accent-light', e.data.accentLight);
+          document.documentElement.style.setProperty('--bsi-accent-dark', e.data.accentDark);
+          if (e.data.accentLighter) document.documentElement.style.setProperty('--bsi-accent-lighter', e.data.accentLighter);
+          if (e.data.accentLightest) document.documentElement.style.setProperty('--bsi-accent-lightest', e.data.accentLightest);
+        }
         break;
     }
   });
@@ -4827,7 +4842,16 @@ function applyBambuTheme(theme) {
   }
 }
 window.addEventListener('message', function(ev) {
-  if (ev.data && ev.data.type === 'theme-change' && ev.data.theme) applyBambuTheme(ev.data.theme);
+  if (ev.data && ev.data.type === 'theme-change') {
+    if (ev.data.theme) applyBambuTheme(ev.data.theme);
+    if (ev.data.accentColor) {
+      document.documentElement.style.setProperty('--bsi-accent', ev.data.accentColor);
+      document.documentElement.style.setProperty('--bsi-accent-light', ev.data.accentLight);
+      document.documentElement.style.setProperty('--bsi-accent-dark', ev.data.accentDark);
+      if (ev.data.accentLighter) document.documentElement.style.setProperty('--bsi-accent-lighter', ev.data.accentLighter);
+      if (ev.data.accentLightest) document.documentElement.style.setProperty('--bsi-accent-lightest', ev.data.accentLightest);
+    }
+  }
 });
 if (window.parent !== window) {
   try { window.parent.postMessage({ type: 'theme-request' }, '*'); } catch(e) {}
