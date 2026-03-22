@@ -246,6 +246,24 @@
       color: #4a5280 !important;
     }
 
+    /* ── Filament Picker (objects panel) ── */
+    .fil-swatch {
+      width: 22px; height: 22px; border-radius: 4px; border: 2px solid transparent;
+      cursor: pointer; transition: border-color 0.15s, transform 0.1s; position: relative;
+    }
+    .fil-swatch:hover { transform: scale(1.15); border-color: rgba(245,158,11,0.4); }
+    .fil-swatch.active { border-color: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.5); }
+    .fil-swatch .fil-swatch-tip {
+      display: none; position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
+      background: #18181b; border: 1px solid #3f3f46; color: #d4d4d8; font-size: 9px;
+      font-family: 'JetBrains Mono', monospace; padding: 2px 6px; border-radius: 4px;
+      white-space: nowrap; pointer-events: none; z-index: 10;
+    }
+    .fil-swatch:hover .fil-swatch-tip { display: block; }
+    [data-theme="light"] .fil-swatch:hover { border-color: rgba(16,6,159,0.4); }
+    [data-theme="light"] .fil-swatch.active { border-color: #10069f; box-shadow: 0 0 6px rgba(16,6,159,0.3); }
+    [data-theme="light"] .fil-swatch .fil-swatch-tip { background: #fff; border-color: #d4d4d8; color: #27272a; }
+
     /* ── Quote Panel ── */
     .quote-mat-btn {
       transition: all 0.15s;
@@ -453,6 +471,23 @@
       <span id="walls-val" class="text-[11px] font-mono text-zinc-300 w-8 text-right">3</span>
     </div>
     <div id="weight-info" class="text-xs font-mono text-zinc-400 leading-relaxed pt-1"></div>
+    <!-- Filament Inventory Picker -->
+    <div id="filament-picker" class="hidden pt-2 border-t border-zinc-700 mt-2 space-y-2">
+      <div class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Filament</div>
+      <select id="filament-material-select" class="w-full bg-zinc-800 border border-zinc-700 rounded text-xs font-mono text-zinc-300 px-1.5 py-1 outline-none focus:border-amber-500/50 cursor-pointer">
+        <option value="">Select material...</option>
+      </select>
+      <div id="filament-color-swatches" class="flex flex-wrap gap-1.5 hidden"></div>
+      <div id="filament-selected-info" class="text-[10px] font-mono text-zinc-500 hidden"></div>
+    </div>
+    <!-- Price Quote (always visible when model loaded) -->
+    <div id="price-quote-bar" class="hidden pt-2 border-t border-zinc-700 mt-2">
+      <div class="flex items-baseline justify-between">
+        <span class="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Quote</span>
+        <span id="price-quote-total" class="text-lg font-mono font-bold text-amber-500">--</span>
+      </div>
+      <div id="price-quote-detail" class="text-[10px] font-mono text-zinc-500 leading-relaxed mt-0.5"></div>
+    </div>
   </div>
 </div>
 
@@ -794,6 +829,255 @@ if (isQuoteMode) {
   // Change drop zone text for quote mode
   const dropTitle = dropZone.querySelector('h2');
   if (dropTitle) dropTitle.textContent = 'Upload your 3D model for a quote';
+}
+
+// ─── Filament Inventory Integration ───
+let filamentInventory = [];       // raw array from Firestore 'filaments' collection
+let filamentByMaterial = {};      // grouped: { 'PLA': [{...}, {...}], 'PETG': [...] }
+let selectedFilament = null;      // currently selected filament for quoting
+const filamentPicker = document.getElementById('filament-picker');
+const filamentMaterialSelect = document.getElementById('filament-material-select');
+const filamentColorSwatches = document.getElementById('filament-color-swatches');
+const filamentSelectedInfo = document.getElementById('filament-selected-info');
+const priceQuoteBar = document.getElementById('price-quote-bar');
+const priceQuoteTotal = document.getElementById('price-quote-total');
+const priceQuoteDetail = document.getElementById('price-quote-detail');
+
+async function loadFilamentInventory() {
+  if (!galleryDb) { populateFilamentPickerFromPricing(); return; }
+  try {
+    // Ensure auth before reading (Firestore rules require authentication)
+    if (galleryAuth && !galleryAuth.currentUser) {
+      try { await galleryAuth.signInAnonymously(); } catch(e) { /* anonymous auth may be disabled */ }
+    }
+    const snap = await galleryDb.collection('filaments').get();
+    filamentInventory = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Only keep filaments with stock and a customer price
+    const available = filamentInventory.filter(f => (f.rolls > 0 || f.remaining > 0) && f.pricePerKg > 0);
+    // Group by material type
+    filamentByMaterial = {};
+    available.forEach(f => {
+      const mat = f.material || 'Other';
+      if (!filamentByMaterial[mat]) filamentByMaterial[mat] = [];
+      filamentByMaterial[mat].push(f);
+    });
+    if (Object.keys(filamentByMaterial).length > 0) {
+      renderFilamentMaterialSelect();
+      buildPricingFromInventory();
+      console.log(`[bambu-viewer] Loaded ${available.length} filaments from inventory (${Object.keys(filamentByMaterial).length} materials)`);
+    } else {
+      // No filaments with pricePerKg yet — fall back to pricing config
+      populateFilamentPickerFromPricing();
+    }
+  } catch (err) {
+    console.warn('[bambu-viewer] Filament inventory not available, using pricing config');
+    populateFilamentPickerFromPricing();
+  }
+}
+
+// Fallback: populate filament picker from the existing pricing config
+function populateFilamentPickerFromPricing() {
+  if (!pricingConfig) {
+    // Pricing not loaded yet — retry after it loads
+    setTimeout(() => populateFilamentPickerFromPricing(), 1000);
+    return;
+  }
+  filamentByMaterial = {};
+  for (const [mat, cfg] of Object.entries(pricingConfig.materials)) {
+    if (!cfg.available) continue;
+    const colors = cfg.availableColors || [];
+    if (colors.length === 0) {
+      // Add a default entry for this material
+      filamentByMaterial[mat] = [{
+        id: `pricing-${mat}-default`, material: mat,
+        color: '#808080', colorName: 'Default',
+        pricePerKg: cfg.pricePerKg || 0, rolls: 99, remaining: 100,
+      }];
+    } else {
+      filamentByMaterial[mat] = colors.map((c, i) => ({
+        id: `pricing-${mat}-${i}`, material: mat,
+        color: c.hex, colorName: c.name,
+        pricePerKg: cfg.pricePerKg || 0, rolls: 99, remaining: 100,
+      }));
+    }
+  }
+  renderFilamentMaterialSelect();
+}
+
+function buildPricingFromInventory() {
+  // Build a pricingConfig from filament inventory for the quote system
+  const invPricing = { materials: {}, currency: 'EUR', taxRate: 0 };
+  for (const [mat, fils] of Object.entries(filamentByMaterial)) {
+    // Use the median pricePerKg if multiple filaments of same material
+    const prices = fils.map(f => f.pricePerKg).filter(p => p > 0);
+    const avgPrice = prices.length ? prices.reduce((a,b) => a+b, 0) / prices.length : 0;
+    const colors = fils.map(f => ({ hex: f.color || '#808080', name: f.colorName || f.color || 'Default' }));
+    // Deduplicate colors
+    const seen = new Set();
+    const uniqueColors = colors.filter(c => { const k = c.hex + c.name; if (seen.has(k)) return false; seen.add(k); return true; });
+    invPricing.materials[mat] = {
+      pricePerKg: avgPrice,
+      setupFee: 5.00,
+      minCharge: 8.00,
+      available: true,
+      availableColors: uniqueColors
+    };
+    // Also add density mapping
+    const matEntry = MATERIALS.find(m => m.name === mat || m.name.startsWith(mat));
+    if (matEntry) QUOTE_DENSITY_MAP[mat] = matEntry.density;
+  }
+  // Merge with existing pricing (inventory takes precedence for available materials)
+  if (pricingConfig) {
+    for (const [mat, cfg] of Object.entries(invPricing.materials)) {
+      pricingConfig.materials[mat] = { ...pricingConfig.materials[mat], ...cfg };
+    }
+  } else {
+    pricingConfig = invPricing;
+  }
+  if (isQuoteMode) renderQuoteMaterials();
+}
+
+function renderFilamentMaterialSelect() {
+  if (!filamentMaterialSelect) return;
+  filamentMaterialSelect.innerHTML = '<option value="">Select material...</option>';
+  const matNames = Object.keys(filamentByMaterial).sort();
+  matNames.forEach(mat => {
+    const opt = document.createElement('option');
+    opt.value = mat;
+    const count = filamentByMaterial[mat].length;
+    const prices = filamentByMaterial[mat].map(f => f.pricePerKg).filter(p => p > 0);
+    const avgPrice = prices.length ? (prices.reduce((a,b) => a+b, 0) / prices.length).toFixed(2) : '?';
+    opt.textContent = `${mat} (${count} color${count !== 1 ? 's' : ''}) — €${avgPrice}/kg`;
+    filamentMaterialSelect.appendChild(opt);
+  });
+}
+
+function renderFilamentColorSwatches(materialName) {
+  if (!filamentColorSwatches) return;
+  filamentColorSwatches.innerHTML = '';
+  const fils = filamentByMaterial[materialName] || [];
+  if (!fils.length) {
+    filamentColorSwatches.classList.add('hidden');
+    return;
+  }
+  filamentColorSwatches.classList.remove('hidden');
+  fils.forEach(f => {
+    const swatch = document.createElement('div');
+    swatch.className = 'fil-swatch';
+    swatch.style.background = f.color || '#808080';
+    swatch.dataset.filId = f.id;
+    const tip = document.createElement('span');
+    tip.className = 'fil-swatch-tip';
+    tip.textContent = `${f.colorName || f.color} — €${(f.pricePerKg || 0).toFixed(2)}/kg`;
+    swatch.appendChild(tip);
+    swatch.addEventListener('click', () => selectFilament(f));
+    filamentColorSwatches.appendChild(swatch);
+  });
+  // Auto-select first
+  if (fils.length && !selectedFilament) {
+    selectFilament(fils[0]);
+  }
+}
+
+function selectFilament(f) {
+  selectedFilament = f;
+  // Update swatch highlight
+  filamentColorSwatches.querySelectorAll('.fil-swatch').forEach(s => {
+    s.classList.toggle('active', s.dataset.filId === f.id);
+  });
+  // Show info
+  if (filamentSelectedInfo) {
+    filamentSelectedInfo.classList.remove('hidden');
+    filamentSelectedInfo.innerHTML = `<span class="text-zinc-300">${f.colorName || f.color}</span> · <span class="text-amber-400">€${(f.pricePerKg || 0).toFixed(2)}/kg</span>`;
+  }
+  // Apply color to model
+  const color = new THREE.Color(f.color || '#f59e0b');
+  plates.forEach(p => {
+    p.group.traverse(c => {
+      if (c.isMesh && c.material) {
+        c.material.color.copy(color);
+        c.userData.originalColor = color.clone();
+      }
+    });
+    p.colors = getColors(p.group);
+  });
+  // Update material density
+  const matEntry = MATERIALS.find(m => m.name === f.material || m.name.startsWith(f.material));
+  if (matEntry) {
+    const idx = MATERIALS.indexOf(matEntry);
+    selectedMaterialIdx = idx;
+    materialSelect.value = idx;
+  }
+  // Update quote
+  updatePriceQuote();
+  // Also update objects panel weights
+  if (plates.length) updateObjectsPanel(plates[activePlateIndex]);
+}
+
+function updatePriceQuote() {
+  if (!priceQuoteBar || !plates.length) return;
+  // Gather meshes from active plate
+  const meshes = [];
+  const plate = plates[activePlateIndex >= 0 ? activePlateIndex : 0];
+  if (plate) plate.group.traverse(c => { if (c.isMesh) meshes.push(c); });
+  if (!meshes.length) {
+    priceQuoteBar.classList.add('hidden');
+    return;
+  }
+
+  // Use filament inventory price if available, otherwise fall back to pricing config
+  let pricePerKg = 0;
+  let materialLabel = 'Unknown';
+  if (selectedFilament && selectedFilament.pricePerKg > 0) {
+    pricePerKg = selectedFilament.pricePerKg;
+    materialLabel = `${selectedFilament.material} — ${selectedFilament.colorName || selectedFilament.color}`;
+  } else if (selectedQuoteMaterial && pricingConfig?.materials?.[selectedQuoteMaterial]) {
+    pricePerKg = pricingConfig.materials[selectedQuoteMaterial].pricePerKg || 0;
+    materialLabel = selectedQuoteMaterial;
+  }
+
+  if (pricePerKg <= 0) {
+    priceQuoteBar.classList.remove('hidden');
+    priceQuoteTotal.textContent = '--';
+    priceQuoteDetail.textContent = 'Select a filament to see price';
+    return;
+  }
+
+  // Calculate weight
+  let totalVol = 0;
+  meshes.forEach(m => {
+    if (!m.userData.volume) m.userData.volume = computeMeshVolume(m);
+    totalVol += m.userData.volume;
+  });
+  const density = selectedFilament
+    ? (MATERIALS.find(m => m.name === selectedFilament.material || m.name.startsWith(selectedFilament.material))?.density || 1.24)
+    : (QUOTE_DENSITY_MAP[selectedQuoteMaterial] || 1.24);
+  let totalWeight = 0;
+  meshes.forEach(m => { totalWeight += estimateWeight(m.userData.volume, density); });
+
+  const weightKg = totalWeight / 1000;
+  const materialCost = weightKg * pricePerKg;
+  const totalPrice = Math.max(materialCost, 0);
+
+  priceQuoteBar.classList.remove('hidden');
+  priceQuoteTotal.textContent = `€ ${totalPrice.toFixed(2)}`;
+  const weightStr = totalWeight >= 1 ? totalWeight.toFixed(1) + ' g' : (totalWeight * 1000).toFixed(0) + ' mg';
+  priceQuoteDetail.innerHTML = `${materialLabel}<br>${weightStr} × €${pricePerKg.toFixed(2)}/kg`;
+}
+
+// Filament picker events
+if (filamentMaterialSelect) {
+  filamentMaterialSelect.onchange = function() {
+    const mat = this.value;
+    selectedFilament = null;
+    if (mat && filamentByMaterial[mat]) {
+      renderFilamentColorSwatches(mat);
+    } else {
+      filamentColorSwatches.classList.add('hidden');
+      filamentSelectedInfo.classList.add('hidden');
+      updatePriceQuote();
+    }
+  };
 }
 
 // ─── FDM Plastic Material ───
@@ -3607,6 +3891,12 @@ function updateUI(fileName) {
     objectsPanel.classList.remove('hidden');
     quotePanel.classList.add('hidden');
   }
+  // Show filament picker & quote if inventory is loaded
+  if (filamentPicker && Object.keys(filamentByMaterial).length > 0) {
+    filamentPicker.classList.remove('hidden');
+    priceQuoteBar.classList.remove('hidden');
+    updatePriceQuote();
+  }
   bottomBar.style.display = 'flex';
 }
 
@@ -3705,6 +3995,8 @@ function updateWeightInfo(meshes) {
   `;
   // Update quote panel if in quote mode
   if (isQuoteMode) updateQuotePanel();
+  // Always update price quote from filament inventory
+  updatePriceQuote();
 }
 
 // ─── Quote System ───
@@ -3896,11 +4188,22 @@ function updateQuotePanel() {
   const weightKg = totalWeight / 1000;
   const weightStr = totalWeight >= 1 ? totalWeight.toFixed(1) + ' g' : (totalWeight * 1000).toFixed(0) + ' mg';
 
-  // Pricing
+  // Pricing — use filament-specific price if a specific inventory color is selected
   const matConfig = pricingConfig.materials[selectedQuoteMaterial];
   if (!matConfig) return;
 
-  const materialCost = weightKg * matConfig.pricePerKg;
+  // Check if the selected color maps to a specific filament with its own price
+  let effectivePricePerKg = matConfig.pricePerKg;
+  if (selectedQuoteColor && filamentByMaterial[selectedQuoteMaterial]) {
+    const matchingFil = filamentByMaterial[selectedQuoteMaterial].find(f =>
+      f.color === selectedQuoteColor.hex && (f.colorName === selectedQuoteColor.name || !selectedQuoteColor.name)
+    );
+    if (matchingFil && matchingFil.pricePerKg > 0) {
+      effectivePricePerKg = matchingFil.pricePerKg;
+    }
+  }
+
+  const materialCost = weightKg * effectivePricePerKg;
   const totalBeforeMin = materialCost + matConfig.setupFee;
   const totalPrice = Math.max(totalBeforeMin, matConfig.minCharge);
   const currency = pricingConfig.currency || 'EUR';
@@ -4850,6 +5153,8 @@ initScene().then(() => {
   }
   // Load pricing config for quote mode (also needed for admin button)
   if (isQuoteMode || true) loadPricingConfig();
+  // Load filament inventory for material/color selection and quoting
+  loadFilamentInventory();
 }).catch(e => console.error('Failed to init scene:', e));
 </script>
 
@@ -4920,6 +5225,14 @@ window.addEventListener('message', function(ev) {
       }).then(function() {
         _galleryAdminAuthReady = true;
       });
+    }
+
+    // Retry loading filament inventory now that we have auth
+    if (galleryAuth?.currentUser || _galleryAdminAuthReady) {
+      loadFilamentInventory();
+    } else if (galleryAuth) {
+      // Wait briefly for auth to settle, then retry
+      setTimeout(() => loadFilamentInventory(), 1500);
     }
 
     // Re-render gallery to show/hide delete buttons
