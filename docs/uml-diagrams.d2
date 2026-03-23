@@ -1,0 +1,397 @@
+# Bambu 3MF Viewer - UML Diagrams
+
+# ============================================================
+# CLASS DIAGRAM
+# ============================================================
+class-diagram: Class Diagram {
+
+  SceneManager: SceneManager {
+    shape: class
+    scene: THREE.Scene
+    camera: THREE.PerspectiveCamera
+    renderer: WebGPURenderer
+    controls: OrbitControls
+    raycaster: THREE.Raycaster
+    mouse: THREE.Vector2
+    modelCenter: THREE.Vector3
+    modelSize: THREE.Vector3
+    cameraDistance: number
+    rendererBackend: string
+    initScene()
+    animate()
+    resetCamera()
+  }
+
+  PlateManager: PlateManager {
+    shape: class
+    plates: "Plate[]"
+    activePlateIndex: number
+    showPlate(index)
+    showAllPlates()
+    addMeshToPlate()
+  }
+
+  Plate: Plate {
+    shape: class
+    id: string
+    name: string
+    meshes: "PlateMesh[]"
+    bed: THREE.Mesh
+  }
+
+  PlateMesh: PlateMesh {
+    shape: class
+    mesh: THREE.Mesh
+    name: string
+    color: string
+    quantity: number
+    filament: FilamentInfo
+    visible: boolean
+    volume: number
+    weight: number
+  }
+
+  FilamentInfo: FilamentInfo {
+    shape: class
+    id: string
+    colorName: string
+    color: string (hex)
+    material: string
+    brand: string
+    remaining: number
+    diameter: number
+  }
+
+  PricingConfig: PricingConfig {
+    shape: class
+    materials: "MaterialPrice[]"
+    laborPerHour: number
+    platformFee: number
+    enableQuotes: boolean
+  }
+
+  MaterialPrice: MaterialPrice {
+    shape: class
+    name: string
+    pricePerGram: number
+    densityGCm3: number
+    layerHeights: "number[]"
+    infillPatterns: "string[]"
+  }
+
+  QuoteState: QuoteState {
+    shape: class
+    selectedMaterial: string
+    selectedColor: string
+    infillPercent: number
+    infillType: string
+    qualityPreset: string
+    wallCount: number
+    totalWeight: number
+    totalPrice: number
+    updateQuotePanel()
+  }
+
+  GalleryModel: GalleryModel {
+    shape: class
+    id: string
+    name: string
+    description: string
+    tags: "string[]"
+    fileUrl: string
+    storagePath: string
+    thumbnailUrl: string
+    uploadedBy: string
+    createdAt: string
+  }
+
+  FileLoaders: File Loaders {
+    shape: class
+    load3MF(file)
+    loadSTL(file)
+    loadOBJ(file)
+    loadSTEP(file)
+    loadDXF(file)
+    loadFile(file)
+    loadFromUrl(url)
+  }
+
+  FDMMaterial: FDM Material System {
+    shape: class
+    createFDMTextures()
+    createFDMMaterial(color)
+    updateFDMForLayerHeight()
+  }
+
+  UIManager: UI Manager {
+    shape: class
+    updateUI(fileName)
+    updateObjectsPanel(plate)
+    updateWeightInfo(meshes)
+    renderFilamentMaterialSelect()
+    renderFilamentColorSwatches()
+    showQuoteCard()
+    updatePriceQuote()
+  }
+
+  SceneManager -> PlateManager: manages plates
+  PlateManager -> Plate: contains
+  Plate -> PlateMesh: contains meshes
+  PlateMesh -> FilamentInfo: has filament
+  FileLoaders -> SceneManager: adds to scene
+  FileLoaders -> PlateManager: populates plates
+  FDMMaterial -> PlateMesh: applies material
+  QuoteState -> PricingConfig: uses pricing
+  QuoteState -> PlateMesh: calculates from
+  UIManager -> PlateManager: reads state
+  UIManager -> QuoteState: updates
+}
+
+# ============================================================
+# SEQUENCE DIAGRAM: File Load and 3D Rendering
+# ============================================================
+seq-load: File Load and 3D Rendering {
+  shape: sequence_diagram
+
+  user: User
+  browser: Browser
+  viewer: Viewer App
+  cdn: CDN
+  threejs: Three.js Engine
+  firebase: Firebase (Gallery)
+
+  user -> browser: Open bambu-viewer
+  browser -> viewer: GET /bambu-viewer/index.html
+  viewer -> cdn: Load Three.js (importmap)
+  viewer -> cdn: Load STLLoader, OBJLoader, OrbitControls
+  viewer -> cdn: Load Tailwind CSS
+  viewer -> cdn: Load Firebase SDK
+  cdn -> viewer: Scripts loaded
+
+  viewer -> viewer: initScene()
+  viewer -> threejs: Create WebGPU/WebGL Renderer
+  threejs -> viewer: Renderer ready
+  viewer -> threejs: Create Scene + Camera + Lights
+  viewer -> threejs: Create OrbitControls
+  viewer -> viewer: Show drop zone UI
+
+  user -> viewer: Drop 3MF file
+  viewer -> viewer: loadFile(file) - detect extension
+  viewer -> viewer: load3MF(file)
+  viewer -> viewer: JSZip extract archive
+  viewer -> viewer: Parse 3dmodel.model XML
+  viewer -> viewer: Parse plate configs
+  viewer -> viewer: Extract mesh geometry data
+  viewer -> viewer: createGeometryFromMesh()
+  viewer -> threejs: Create BufferGeometry
+  viewer -> viewer: createFDMMaterial(color)
+  viewer -> threejs: Apply material to mesh
+  viewer -> viewer: addMeshToPlate()
+  viewer -> threejs: Add mesh to scene
+  viewer -> viewer: createBed(width, depth)
+  viewer -> viewer: Fit camera to model bounds
+  viewer -> viewer: updateUI(fileName)
+  viewer -> viewer: updateObjectsPanel()
+  viewer -> viewer: updateWeightInfo()
+  viewer -> threejs: Start animation loop
+  threejs -> browser: Render frames at 60fps
+}
+
+# ============================================================
+# SEQUENCE DIAGRAM: Gallery and Quote Mode
+# ============================================================
+seq-gallery: Gallery Browse and Quote Flow {
+  shape: sequence_diagram
+
+  user: User
+  viewer: Viewer App
+  firebase_auth: Firebase Auth
+  firestore: Firestore
+  storage: Firebase Storage
+  portal: Portal (parent)
+
+  portal -> viewer: postMessage admin-auth
+  viewer -> viewer: Store auth state
+
+  user -> viewer: Click Gallery button
+  viewer -> firestore: loadGallery() - query models collection
+  firestore -> viewer: Gallery model documents
+  viewer -> viewer: renderGallery(models)
+
+  user -> viewer: Click gallery model
+  viewer -> storage: Fetch model file URL
+  storage -> viewer: Signed URL
+  viewer -> viewer: loadFromUrl(url)
+  viewer -> viewer: Render 3D model
+
+  user -> viewer: Open Quote panel (mode=quote)
+  viewer -> firestore: loadPricingConfig()
+  firestore -> viewer: Pricing rules
+  viewer -> viewer: renderQuoteMaterials()
+  viewer -> viewer: renderQuoteColors(material)
+
+  user -> viewer: Select material (PLA/PETG/TPU)
+  viewer -> viewer: Filter available colors
+  user -> viewer: Select color
+  user -> viewer: Adjust infill and quality
+  viewer -> viewer: updateQuotePanel()
+  viewer -> viewer: Calculate weight from mesh volumes
+  viewer -> viewer: Calculate price (material + labor + fee)
+  viewer -> user: Display quote total
+
+  user -> viewer: Click Request Quote
+  viewer -> viewer: Open quote request form
+
+  viewer."Admin only": Admin uploads models
+  user -> viewer: Upload new model (admin)
+  viewer -> storage: Upload file
+  storage -> viewer: Storage path
+  viewer -> firestore: Save gallery document
+}
+
+# ============================================================
+# SEQUENCE DIAGRAM: Portal Integration (Shop Embed)
+# ============================================================
+seq-embed: Embedded Viewer in Shop {
+  shape: sequence_diagram
+
+  customer: Customer
+  shop: Shop App
+  viewer: Bambu Viewer (iframe)
+  threejs: Three.js
+
+  customer -> shop: View product with 3D model
+  shop -> shop: Check product.default3D or models[]
+  shop -> viewer: Embed viewer iframe
+  shop -> viewer: postMessage bambu-viewer-load
+  shop."load payload": |md
+    type: bambu-viewer-load
+    url: model STL/3MF URL
+  |
+  viewer -> viewer: loadFromUrl(url)
+  viewer -> threejs: Parse and render model
+  threejs -> viewer: Model displayed
+  viewer -> customer: Interactive 3D preview
+
+  customer -> shop: Select different variant
+  shop -> shop: switchModel(newIndex)
+  shop -> viewer: postMessage bambu-viewer-load (new URL)
+  viewer -> viewer: Clear scene
+  viewer -> viewer: loadFromUrl(newUrl)
+  viewer -> customer: Updated 3D preview
+
+  customer -> viewer: Rotate/zoom model
+  viewer -> threejs: OrbitControls interaction
+  threejs -> viewer: Re-render frame
+}
+
+# ============================================================
+# COMPONENT ARCHITECTURE
+# ============================================================
+architecture: Component Architecture {
+
+  frontend: Frontend (Vanilla JS) {
+
+    ui: UI Layer {
+      dropzone: Drop Zone (file input)
+      toolbar: Bottom Toolbar (view controls)
+      sidebar_l: Plate Sidebar (left)
+      sidebar_r: Objects Panel (right)
+      topbar: Top Bar (model name, open, gallery)
+      quote_panel: Quote Panel
+      quote_card: Floating Quote Card
+    }
+
+    engine: 3D Engine {
+      scene: Three.js Scene
+      camera: PerspectiveCamera
+      renderer: WebGPU or WebGL Renderer
+      controls: OrbitControls
+      lighting: Ambient + Directional Lights
+      postproc: Post Processing (FXAA, bloom)
+    }
+
+    loaders: File Loaders {
+      threemf: 3MF Loader (JSZip + XML)
+      stl: STL Loader
+      obj: OBJ Loader
+      step: STEP Loader (opencascade.js)
+      dxf: DXF Loader (dxf-parser)
+    }
+
+    materials: Material System {
+      fdm: FDM Textured Materials
+      filament: Filament Picker
+      colors: Color Swatches
+    }
+  }
+
+  backend: Backend Services {
+    auth: Firebase Auth {
+      shape: cloud
+    }
+    db: Firestore {
+      shape: cylinder
+    }
+    storage: Firebase Storage {
+      shape: cylinder
+    }
+  }
+
+  integrations: Parent Integration {
+    portal: Portal (postMessage)
+    shop: Shop App (postMessage)
+  }
+
+  frontend.ui -> frontend.engine: controls
+  frontend.loaders -> frontend.engine: feeds geometry
+  frontend.materials -> frontend.engine: applies materials
+  frontend.ui.quote_panel -> backend.db: load pricing config
+  frontend.ui.sidebar_r -> frontend.materials.filament: pick filament
+  backend.storage -> frontend.loaders: gallery model files
+  backend.db -> frontend.ui: gallery metadata + pricing
+  integrations -> frontend.loaders: postMessage load URL
+  integrations -> frontend.ui: postMessage theme
+}
+
+# ============================================================
+# APPLICATION STATES
+# ============================================================
+states: Application States {
+
+  drop_zone: Drop Zone (waiting for file) {
+    style.fill: "#27272a"
+  }
+  loading: Loading Model {
+    style.fill: "#78350f"
+  }
+  gallery: Browsing Gallery {
+    style.fill: "#312e81"
+  }
+  viewing: Viewing 3D Model {
+    style.fill: "#065f46"
+  }
+  quote_mode: Quote Mode {
+    style.fill: "#1e3a5f"
+  }
+  admin_gallery: Admin Upload {
+    style.fill: "#7c2d12"
+  }
+  error: Load Error {
+    style.fill: "#7f1d1d"
+  }
+
+  drop_zone -> loading: File dropped or selected
+  drop_zone -> gallery: Click Browse Gallery
+  gallery -> loading: Select gallery model
+  gallery -> admin_gallery: Admin uploads model
+  admin_gallery -> gallery: Upload complete
+  loading -> viewing: Model parsed and rendered
+  loading -> error: Parse failed
+  viewing -> drop_zone: Open new file
+  viewing -> gallery: Click Gallery button
+  viewing -> quote_mode: Open quote panel
+  quote_mode -> viewing: Close quote panel
+  error -> drop_zone: Dismiss error
+  gallery -> drop_zone: Back button
+}
