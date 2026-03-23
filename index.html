@@ -5497,9 +5497,10 @@ function applyEmbedMode() {
     }
   };
 
-  // Listen for commands from parent
+  // Listen for commands from parent (origin validated via global isAllowedOrigin)
   window.addEventListener('message', (e) => {
     if (!e.data || typeof e.data !== 'object') return;
+    if (!isAllowedOrigin(e.origin)) return;
     switch(e.data.type) {
       case 'bambu-viewer-load':
         if (e.data.url) loadFromUrl(e.data.url);
@@ -5585,6 +5586,15 @@ initScene().then(() => {
 </script>
 
 <script>
+// ── Global postMessage origin validation ──
+(function() {
+  const ALLOWED = ['https://blacksphereindustries.nl', 'https://www.blacksphereindustries.nl'];
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    ALLOWED.push('http://localhost:8080', 'http://localhost:8081');
+  }
+  window.isAllowedOrigin = function(origin) { return ALLOWED.includes(origin) || origin.endsWith('.pages.dev'); };
+})();
+
 // ─── BSI Theme Bridge v1.1 ───
 function applyBambuTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
@@ -5594,6 +5604,7 @@ function applyBambuTheme(theme) {
   }
 }
 window.addEventListener('message', function(ev) {
+  if (!isAllowedOrigin(ev.origin)) return;
   if (ev.data && ev.data.type === 'theme-change') {
     if (ev.data.theme) applyBambuTheme(ev.data.theme);
     if (ev.data.accentColor) {
@@ -5652,6 +5663,7 @@ function toggleAdminPanel() {
 // Listen for admin-auth from the portal
 window.addEventListener('message', function(ev) {
   if (!ev.data || typeof ev.data !== 'object') return;
+  if (!isAllowedOrigin(ev.origin)) return;
   if (ev.data.type === 'admin-auth') {
     isGalleryAdmin = !!ev.data.isAdmin;
     toggleAdminPanel();
@@ -5668,7 +5680,10 @@ window.addEventListener('message', function(ev) {
       galleryAuth.signInWithCustomToken(ev.data.sso.firebaseIdToken).catch(function() {
         // Custom token may not work; try credential-based sign-in isn't available
         // For gallery writes, security rules should allow authenticated users with admin claim
-        // Fall back to anonymous auth so at least the upload call reaches Firestore
+        // SECURITY NOTE: Anonymous auth fallback — Firestore security rules MUST
+        // restrict anonymous users to read-only access. All write operations
+        // (gallery uploads, pricing changes) require authenticated admin claims.
+        // See Firestore rules: match /gallery/{doc} { allow write: if request.auth.token.admin == true; }
         if (!galleryAuth.currentUser) {
           galleryAuth.signInAnonymously().catch(function() {});
         }
