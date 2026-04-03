@@ -582,9 +582,16 @@
       <span id="quote-total" class="text-2xl font-mono font-bold text-amber-500">--</span>
     </div>
     <div class="text-[9px] font-mono text-zinc-600">Excl. shipping &middot; Prices indicative</div>
-    <button id="quote-request-btn" class="quote-request-btn w-full mt-2 bg-amber-500 hover:bg-amber-400 text-zinc-900 font-mono font-bold text-sm px-4 py-2.5 rounded-lg transition-colors cursor-pointer">
-      Request Quote
+    <!-- Agree with quote toggle -->
+    <button id="quote-agree-btn" class="w-full mt-2 flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-zinc-300 font-mono font-bold text-xs px-3 py-2 rounded-lg transition-colors cursor-pointer">
+      <svg id="quote-agree-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+      <span id="quote-agree-label">Agree with Quote</span>
     </button>
+    <!-- Quote action buttons -->
+    <div class="flex gap-2 mt-2">
+      <button id="quote-email-btn" class="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-mono font-bold text-xs px-3 py-2 rounded-lg transition-colors cursor-pointer border border-zinc-600">Email</button>
+      <button id="quote-add-to-cart-btn" class="flex-1 bg-amber-500 text-zinc-900 font-mono font-bold text-xs px-3 py-2 rounded-lg transition-colors opacity-40 cursor-not-allowed" disabled>Add to Cart</button>
+    </div>
   </div>
 </div>
 
@@ -929,6 +936,7 @@ let filamentInventory = [];       // raw array from Firestore 'filaments' collec
 let filamentByMaterial = {};      // grouped: { 'PLA': [{...}, {...}], 'PETG': [...] }
 let selectedFilament = null;      // currently selected filament for quoting
 const objectQuantities = new Map(); // mesh UUID → quantity (default 1)
+let currentModelFile = null;        // currently loaded file (for upload on quote agree)
 
 function getObjQty(mesh) { return objectQuantities.get(mesh.uuid) || 1; }
 function setObjQty(mesh, qty) { objectQuantities.set(mesh.uuid, Math.max(1, Math.min(999, parseInt(qty) || 1))); }
@@ -2583,6 +2591,9 @@ async function loadDXF(file) {
 }
 
 function loadFile(file) {
+  currentModelFile = file;
+  // Reset quote agreement when a new model is loaded
+  if (typeof setQuoteAgreed === 'function') setQuoteAgreed(false);
   const ext = file.name.toLowerCase().split('.').pop();
   switch (ext) {
     case '3mf': load3MF(file); break;
@@ -4345,7 +4356,11 @@ const quoteQuality = document.getElementById('quote-quality');
 const quoteInfill = document.getElementById('quote-infill');
 const quoteInfillVal = document.getElementById('quote-infill-val');
 const quoteInfillType = document.getElementById('quote-infill-type');
-const quoteRequestBtn = document.getElementById('quote-request-btn');
+const quoteAgreeBtn      = document.getElementById('quote-agree-btn');
+const quoteAgreeIcon     = document.getElementById('quote-agree-icon');
+const quoteAgreeLabel    = document.getElementById('quote-agree-label');
+const quoteEmailBtn      = document.getElementById('quote-email-btn');
+const quoteAddToCartBtn  = document.getElementById('quote-add-to-cart-btn');
 
 async function loadPricingConfig() {
   if (!galleryDb) return;
@@ -4618,8 +4633,56 @@ if (quoteInfill) {
     updateQuotePanel();
   };
 }
-if (quoteRequestBtn) {
-  quoteRequestBtn.onclick = () => {
+// ─── Quote agree / email / add-to-cart ───
+let quoteAgreed = false;
+
+function setQuoteAgreed(agreed) {
+  quoteAgreed = agreed;
+  if (!quoteAgreeBtn) return;
+  if (agreed) {
+    quoteAgreeBtn.classList.remove('bg-zinc-800', 'hover:bg-zinc-700', 'border-zinc-600', 'text-zinc-300');
+    quoteAgreeBtn.classList.add('bg-amber-500', 'hover:bg-amber-400', 'text-zinc-900', 'border-amber-500');
+    quoteAgreeIcon.innerHTML = '<rect x="3" y="3" width="18" height="18" rx="3"/><polyline points="9,12 12,15 16,9"/>';
+    if (quoteAddToCartBtn) {
+      quoteAddToCartBtn.disabled = false;
+      quoteAddToCartBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+      quoteAddToCartBtn.classList.add('hover:bg-amber-400', 'cursor-pointer');
+    }
+  } else {
+    quoteAgreeBtn.classList.add('bg-zinc-800', 'hover:bg-zinc-700', 'border-zinc-600', 'text-zinc-300');
+    quoteAgreeBtn.classList.remove('bg-amber-500', 'hover:bg-amber-400', 'text-zinc-900', 'border-amber-500');
+    quoteAgreeIcon.innerHTML = '<rect x="3" y="3" width="18" height="18" rx="3"/>';
+    if (quoteAddToCartBtn) {
+      quoteAddToCartBtn.disabled = true;
+      quoteAddToCartBtn.classList.add('opacity-40', 'cursor-not-allowed');
+      quoteAddToCartBtn.classList.remove('hover:bg-amber-400', 'cursor-pointer');
+    }
+  }
+}
+
+function showBSIToast(msg) {
+  let toast = document.getElementById('bsi-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'bsi-toast';
+    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;' +
+      'background:#18181b;border:1px solid #f59e0b;color:#fbbf24;font-family:monospace;font-size:12px;' +
+      'font-weight:700;padding:8px 18px;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.5);' +
+      'transition:opacity .3s;pointer-events:none;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  clearTimeout(toast._hideTimer);
+  toast._hideTimer = setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+}
+
+if (quoteAgreeBtn) {
+  quoteAgreeBtn.onclick = () => setQuoteAgreed(!quoteAgreed);
+}
+
+if (quoteEmailBtn) {
+  quoteEmailBtn.onclick = () => {
     const q = quotePanel._lastQuote;
     if (!q) return;
     const modelName = modelNameText.textContent || 'Unknown Model';
@@ -4641,6 +4704,89 @@ if (quoteRequestBtn) {
       `Please confirm availability and final pricing.\n\nThank you`
     );
     window.open(`mailto:shop@blacksphereindustries.nl?subject=${subject}&body=${body}`, '_self');
+  };
+}
+
+async function uploadForQuote(file) {
+  if (!galleryStorage) return { url: null, path: null };
+  try {
+    if (galleryAuth && !galleryAuth.currentUser) {
+      try { await galleryAuth.signInAnonymously(); } catch(e) {}
+    }
+    const uid = galleryAuth?.currentUser?.uid || 'anon';
+    const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `custom_prints/${uid}/${Date.now()}_${sanitized}`;
+    const ref = galleryStorage.ref(storagePath);
+    await ref.put(file);
+    const url = await ref.getDownloadURL();
+    return { url, path: storagePath };
+  } catch (err) {
+    console.warn('[bambu-viewer] Quote file upload failed:', err);
+    return { url: null, path: null };
+  }
+}
+
+if (quoteAddToCartBtn) {
+  quoteAddToCartBtn.onclick = async () => {
+    if (!quoteAgreed) return;
+    const q = quotePanel._lastQuote;
+    if (!q) return;
+    const modelName = modelNameText.textContent || 'Unknown Model';
+
+    // Disable button during async work
+    quoteAddToCartBtn.disabled = true;
+    quoteAddToCartBtn.textContent = 'Uploading…';
+
+    let stlUrl = null, storagePath = null;
+    if (currentModelFile) {
+      const up = await uploadForQuote(currentModelFile);
+      stlUrl = up.url;
+      storagePath = up.path;
+    }
+
+    // Build cart item matching shop's expected schema
+    const cartItem = {
+      productId: 'svc_3d-upload',
+      name: `Custom 3D Print — ${modelName}`,
+      price: parseFloat(q.price.replace(/[^0-9.]/g, '')),
+      quantity: 1,
+      variant: 'Standard Quote',
+      source: '3d-upload-service',
+      material: q.material,
+      color: q.color,
+      quality: q.quality,
+      infill: q.infill,
+      infillType: q.infillType,
+      stlUrl: stlUrl,
+      storagePath: storagePath,
+      quoteData: {
+        parts: q.parts,
+        totalQty: q.totalQty,
+        weight: q.weight || null,
+        volume: q.volume || null,
+        printTime: q.printTime || null,
+        fileName: currentModelFile ? currentModelFile.name : modelName,
+        timestamp: Date.now()
+      }
+    };
+
+    // Write to localStorage so shop can pick it up (fallback / standalone flow)
+    localStorage.setItem('3d-upload-quote', JSON.stringify(cartItem));
+
+    // postMessage to parent portal (when iframed)
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'ADD_TO_CART', source: '3d-upload-service', item: cartItem }, '*');
+      window.parent.postMessage({ type: 'NAVIGATE', path: '/shop?view=shop%2Fcart' }, '*');
+    } else {
+      // Standalone — open shop directly in new tab (localStorage will be picked up)
+      window.open('https://blacksphereindustries.nl/shop?view=shop%2Fcart', '_blank');
+    }
+
+    showBSIToast('Added to cart — opening shop…');
+
+    // Restore button
+    quoteAddToCartBtn.textContent = 'Add to Cart';
+    quoteAddToCartBtn.disabled = false;
   };
 }
 
