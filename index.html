@@ -749,6 +749,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js"></script>
 <script>
 const _GALLERY_FB_CONFIG = {
   apiKey: "AIzaSyAJ6y1Jz8OHj2gbnWRZIk1TGZLcggvAMQ4",
@@ -758,14 +759,15 @@ const _GALLERY_FB_CONFIG = {
   messagingSenderId: "258011834485",
   appId: "1:258011834485:web:5afb1efaa303b4dd93f03c",
 };
-let galleryDb, galleryStorage, galleryAuth;
+let galleryDb, galleryStorage, galleryAuth, galleryFunctions;
 try {
   const app = firebase.initializeApp(_GALLERY_FB_CONFIG);
   galleryDb = app.firestore();
   galleryStorage = app.storage();
   galleryAuth = app.auth();
+  galleryFunctions = app.functions('us-central1');
 } catch(e) {
-  try { const app = firebase.app(); galleryDb = app.firestore(); galleryStorage = app.storage(); galleryAuth = app.auth(); } catch(e2) {}
+  try { const app = firebase.app(); galleryDb = app.firestore(); galleryStorage = app.storage(); galleryAuth = app.auth(); galleryFunctions = app.functions('us-central1'); } catch(e2) {}
 }
 </script>
 
@@ -4744,6 +4746,28 @@ async function uploadForQuote(file) {
   }
 }
 
+async function createServerQuoteForCart(cartItem) {
+  if (!galleryFunctions) throw new Error('Firebase Functions not available');
+  const createCustomPrintQuote = galleryFunctions.httpsCallable('createCustomPrintQuote');
+  const result = await createCustomPrintQuote({
+    productId: cartItem.productId,
+    name: cartItem.name,
+    variant: cartItem.variant || 'Standard Quote',
+    material: cartItem.material,
+    color: cartItem.color,
+    quality: cartItem.quality,
+    infill: cartItem.infill,
+    infillType: cartItem.infillType,
+    stlUrl: cartItem.stlUrl || null,
+    storagePath: cartItem.storagePath || null,
+    quoteData: cartItem.quoteData || null,
+    price: cartItem.price,
+    qty: 1,
+    isCustomPrint: true,
+  });
+  return result.data || null;
+}
+
 if (quoteAddToCartBtn) {
   quoteAddToCartBtn.onclick = async () => {
     if (!quoteAgreed) return;
@@ -4762,7 +4786,7 @@ if (quoteAddToCartBtn) {
       storagePath = up.path;
     }
 
-    // Build cart item matching shop's expected schema
+    // Build quote request matching the backend's expected schema
     const cartItem = {
       productId: 'svc_3d-upload',
       name: `Custom 3D Print — ${modelName}`,
@@ -4788,13 +4812,32 @@ if (quoteAddToCartBtn) {
       }
     };
 
+    let quoteResult = null;
+    try {
+      quoteAddToCartBtn.textContent = 'Creating quote…';
+      quoteResult = await createServerQuoteForCart(cartItem);
+    } catch (err) {
+      console.error('[bambu-viewer] Failed to create server quote:', err);
+      showBSIToast('Failed to create quote record. Please try again.');
+      quoteAddToCartBtn.textContent = 'Add to Cart';
+      quoteAddToCartBtn.disabled = false;
+      return;
+    }
+
+    const shopItem = {
+      ...cartItem,
+      ...(quoteResult && quoteResult.item ? quoteResult.item : {}),
+      quoteId: quoteResult?.quoteId || null,
+      price: quoteResult?.price || cartItem.price,
+    };
+
     // postMessage to parent portal (when iframed) — portal queues it and delivers to shop on load
     if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ type: 'ADD_TO_CART', source: '3d-upload-service', item: cartItem }, '*');
+      window.parent.postMessage({ type: 'ADD_TO_CART', source: '3d-upload-service', item: shopItem }, '*');
     } else {
       // Standalone (not iframed) — encode cart item as URL param so portal can pick it up at init
       try {
-        const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(cartItem))));
+        const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(shopItem))));
         window.open('https://blacksphereindustries.nl/shop?quoteItem=' + encoded, '_blank');
       } catch(e) {
         window.open('https://blacksphereindustries.nl/shop', '_blank');
