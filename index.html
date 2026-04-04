@@ -4633,22 +4633,27 @@ if (quoteEmailBtn) {
 }
 
 async function uploadForQuote(file) {
-  if (!galleryStorage) return { url: null, path: null };
-  try {
-    if (galleryAuth && !galleryAuth.currentUser) {
-      try { await galleryAuth.signInAnonymously(); } catch(e) {}
-    }
-    const uid = galleryAuth?.currentUser?.uid || 'anon';
-    const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storagePath = `custom_prints/${uid}/${Date.now()}_${sanitized}`;
-    const ref = galleryStorage.ref(storagePath);
-    await ref.put(file);
-    const url = await ref.getDownloadURL();
-    return { url, path: storagePath };
-  } catch (err) {
-    console.warn('[bambu-viewer] Quote file upload failed:', err);
-    return { url: null, path: null };
+  if (!file) throw new Error('No model file selected');
+  if (!galleryStorage || !galleryAuth) {
+    throw new Error('Firebase Storage is not available');
   }
+
+  if (!galleryAuth.currentUser) {
+    try {
+      await galleryAuth.signInAnonymously();
+    } catch (err) {
+      console.warn('[bambu-viewer] Anonymous auth failed for quote upload:', err);
+    }
+  }
+
+  const uid = (galleryAuth.currentUser && galleryAuth.currentUser.uid) || 'anon';
+
+  const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `custom_prints/${uid}/${Date.now()}_${sanitized}`;
+  const ref = galleryStorage.ref(storagePath);
+  await ref.put(file);
+  const url = await ref.getDownloadURL();
+  return { url, path: storagePath };
 }
 
 async function createServerQuoteForCart(cartItem) {
@@ -4686,9 +4691,17 @@ if (quoteAddToCartBtn) {
 
     let stlUrl = null, storagePath = null;
     if (currentModelFile) {
-      const up = await uploadForQuote(currentModelFile);
-      stlUrl = up.url;
-      storagePath = up.path;
+      try {
+        const up = await uploadForQuote(currentModelFile);
+        stlUrl = up.url;
+        storagePath = up.path;
+      } catch (err) {
+        console.error('[bambu-viewer] Failed to archive quote upload:', err);
+        quoteAddToCartBtn.disabled = false;
+        quoteAddToCartBtn.textContent = 'Add to Cart';
+        alert('Your model could not be archived to Firebase Storage, so the quote was not added to cart.\n\nPlease try again. If this keeps happening, the upload auth flow likely needs attention.');
+        return;
+      }
     }
 
     // Build quote request matching the backend's expected schema
