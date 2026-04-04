@@ -4609,8 +4609,10 @@ function updateQuotePanel() {
   quotePanel._lastQuote = {
     material: selectedQuoteMaterial,
     color: selectedQuoteColor?.name || 'Default',
-    weight: isGalleryAdmin ? weightStr : null,
-    volume: isGalleryAdmin ? (totalVolCm3.toFixed(1) + ' cm\u00B3') : null,
+    // weight/volume always stored (needed for server-side price validation in validateCustomPrintQuote)
+    // — display in quote summary UI remains admin-only
+    weight: weightStr,
+    volume: totalVolCm3.toFixed(2),   // plain number string (cm³) for server-side parsing
     quality: quoteQuality.options[quoteQuality.selectedIndex].text,
     infill: qInfill + '%',
     infillType: (INFILL_TYPES[qInfillType] || INFILL_TYPES['grid']).label,
