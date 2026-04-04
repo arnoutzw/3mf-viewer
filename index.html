@@ -4770,16 +4770,17 @@ if (quoteAddToCartBtn) {
       }
     };
 
-    // Write to localStorage so shop can pick it up (fallback / standalone flow)
-    localStorage.setItem('3d-upload-quote', JSON.stringify(cartItem));
-
-    // postMessage to parent portal (when iframed)
+    // postMessage to parent portal (when iframed) — portal queues it and delivers to shop on load
     if (window.parent && window.parent !== window) {
       window.parent.postMessage({ type: 'ADD_TO_CART', source: '3d-upload-service', item: cartItem }, '*');
-      window.parent.postMessage({ type: 'NAVIGATE', path: '/shop?view=shop%2Fcart' }, '*');
     } else {
-      // Standalone — open shop directly in new tab (localStorage will be picked up)
-      window.open('https://blacksphereindustries.nl/shop?view=shop%2Fcart', '_blank');
+      // Standalone (not iframed) — encode cart item as URL param so portal can pick it up at init
+      try {
+        const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(cartItem))));
+        window.open('https://blacksphereindustries.nl/shop?quoteItem=' + encoded, '_blank');
+      } catch(e) {
+        window.open('https://blacksphereindustries.nl/shop', '_blank');
+      }
     }
 
     showBSIToast('Added to cart — opening shop…');
