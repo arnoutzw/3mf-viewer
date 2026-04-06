@@ -732,15 +732,16 @@ const _GALLERY_FB_CONFIG = {
   messagingSenderId: "258011834485",
   appId: "1:258011834485:web:5afb1efaa303b4dd93f03c",
 };
+const GALLERY_FUNCTIONS_REGION = 'europe-west1';
 let galleryDb, galleryStorage, galleryAuth, galleryFunctions;
 try {
   const app = firebase.initializeApp(_GALLERY_FB_CONFIG);
   galleryDb = app.firestore();
   galleryStorage = app.storage();
   galleryAuth = app.auth();
-  galleryFunctions = app.functions('us-central1');
+  galleryFunctions = app.functions(GALLERY_FUNCTIONS_REGION);
 } catch(e) {
-  try { const app = firebase.app(); galleryDb = app.firestore(); galleryStorage = app.storage(); galleryAuth = app.auth(); galleryFunctions = app.functions('us-central1'); } catch(e2) {}
+  try { const app = firebase.app(); galleryDb = app.firestore(); galleryStorage = app.storage(); galleryAuth = app.auth(); galleryFunctions = app.functions(GALLERY_FUNCTIONS_REGION); } catch(e2) {}
 }
 </script>
 
