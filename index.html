@@ -2488,15 +2488,32 @@ function parseColor(colorStr) {
   }
 }
 
+const IMPORT_YIELD_BUDGET_MS = 32;
+function yieldToBrowserFrame() {
+  return new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+
 async function parseBambu3MF(buffer, onProgress) {
-  const progress = async (msg, pct) => {
-    if (onProgress) onProgress(msg, pct);
-    await new Promise(r => setTimeout(r, 0)); // yield to browser for repaint
+  const yieldState = { lastYield: performance.now(), lastPct: -1, lastMsg: '' };
+  const maybeYield = async (force = false) => {
+    const now = performance.now();
+    if (!force && now - yieldState.lastYield < IMPORT_YIELD_BUDGET_MS) return false;
+    await yieldToBrowserFrame();
+    yieldState.lastYield = performance.now();
+    return true;
   };
-  await progress('Decompressing ZIP...', 10);
+  const progress = async (msg, pct, force = false) => {
+    if (onProgress && (force || pct !== yieldState.lastPct || msg !== yieldState.lastMsg)) {
+      onProgress(msg, pct);
+      yieldState.lastPct = pct;
+      yieldState.lastMsg = msg;
+    }
+    await maybeYield(force);
+  };
+  await progress('Decompressing ZIP...', 10, true);
   const fflate = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
   const data = new Uint8Array(buffer);
-  await new Promise(r => setTimeout(r, 0)); // yield before heavy sync decompression
+  await maybeYield(true); // let the loading state paint before heavy sync decompression
   const unzipped = fflate.unzipSync(data);
 
   const group = new THREE.Group();
@@ -2702,8 +2719,7 @@ async function parseBambu3MF(buffer, onProgress) {
         if (!meshIndex.has(key)) meshIndex.set(key, []);
         meshIndex.get(key).push({ vertices: vertexArr, triangles: triArr, color: meshColor });
       }
-      // Yield after each mesh to avoid blocking
-      if (mi % 2 === 0) await new Promise(r => setTimeout(r, 0));
+      await maybeYield();
     }
     const pct = 50 + Math.round((fi + 1) / modelFiles.length * 15);
     await progress('Building mesh index...', pct);
@@ -2767,7 +2783,7 @@ async function parseBambu3MF(buffer, onProgress) {
           const colorStr = m.color || extruderColor;
           addMeshToPlate(m, combinedXform, colorStr, plateId, partName, filament);
           meshesBuilt++;
-          if (meshesBuilt % 3 === 0) await new Promise(r => setTimeout(r, 0));
+          await maybeYield();
         }
       }
     } else {
@@ -2778,7 +2794,7 @@ async function parseBambu3MF(buffer, onProgress) {
         const colorStr = m.color || extruderColor;
         addMeshToPlate(m, itemTransform, colorStr, plateId, partName, filament);
         meshesBuilt++;
-        if (meshesBuilt % 3 === 0) await new Promise(r => setTimeout(r, 0));
+        await maybeYield();
       }
     }
     const pct = 75 + Math.round((bi + 1) / buildItems.length * 15);
@@ -3388,10 +3404,14 @@ function evaluateOrientation(worldVerts, faces, pivot, quat) {
 
 // Apply lay-flat to all meshes in a group
 async function layFlatGroup(group) {
+  let lastYield = performance.now();
   for (const c of group.children) {
     if (c.isMesh) {
       layFlatMesh(c);
-      await new Promise(r => setTimeout(r, 0));
+      if (performance.now() - lastYield > IMPORT_YIELD_BUDGET_MS) {
+        await yieldToBrowserFrame();
+        lastYield = performance.now();
+      }
     }
   }
 }
@@ -3475,7 +3495,7 @@ function shelfPack(items, bedW, bedD, gap) {
 
 // Finalize geometry: compute normals + bounding boxes after lay-flat is done
 async function finalizeGeometry() {
-  let count = 0;
+  let lastYield = performance.now();
   for (const plate of plates) {
     for (const c of plate.group.children) {
       if (c.isMesh && c.geometry) {
@@ -3499,8 +3519,10 @@ async function finalizeGeometry() {
           if (c.material) c.material.needsUpdate = true;
         }
 
-        count++;
-        if (count % 4 === 0) await new Promise(r => setTimeout(r, 0));
+        if (performance.now() - lastYield > IMPORT_YIELD_BUDGET_MS) {
+          await yieldToBrowserFrame();
+          lastYield = performance.now();
+        }
       }
     }
   }
