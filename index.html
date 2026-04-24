@@ -4674,9 +4674,23 @@ async function uploadForQuote(file) {
   const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const storagePath = `custom_prints/${uid}/${Date.now()}_${sanitized}`;
   const ref = galleryStorage.ref(storagePath);
-  await ref.put(file);
+  await ref.put(file, { contentType: getQuoteUploadContentType(file) });
   const url = await ref.getDownloadURL();
   return { url, path: storagePath };
+}
+
+function summarizeQuoteUploadError(err) {
+  const code = err && err.code ? String(err.code) : '';
+  const message = err && err.message ? String(err.message) : 'Unknown upload error';
+  return [code, message].filter(Boolean).join(': ');
+}
+
+function getQuoteUploadContentType(file) {
+  const ext = (file?.name || '').split('.').pop().toLowerCase();
+  if (ext === '3mf') return 'model/3mf';
+  if (ext === 'stl') return 'model/stl';
+  if (ext === 'obj') return 'model/obj';
+  return file?.type || 'application/octet-stream';
 }
 
 async function createServerQuoteForCart(cartItem) {
@@ -4712,7 +4726,7 @@ if (quoteAddToCartBtn) {
     quoteAddToCartBtn.disabled = true;
     quoteAddToCartBtn.textContent = 'Uploading…';
 
-    let stlUrl = null, storagePath = null;
+    let stlUrl = null, storagePath = null, uploadError = null;
     if (currentModelFile) {
       try {
         const up = await uploadForQuote(currentModelFile);
@@ -4720,10 +4734,8 @@ if (quoteAddToCartBtn) {
         storagePath = up.path;
       } catch (err) {
         console.error('[bambu-viewer] Failed to archive quote upload:', err);
-        quoteAddToCartBtn.disabled = false;
-        quoteAddToCartBtn.textContent = 'Add to Cart';
-        alert('Your model could not be archived to Firebase Storage, so the quote was not added to cart.\n\nPlease try again. If this keeps happening, the upload auth flow likely needs attention.');
-        return;
+        uploadError = summarizeQuoteUploadError(err);
+        showBSIToast('Upload archive failed; creating quote without file...');
       }
     }
 
@@ -4749,6 +4761,8 @@ if (quoteAddToCartBtn) {
         volume: q.volume || null,
         printTime: q.printTime || null,
         fileName: currentModelFile ? currentModelFile.name : modelName,
+        uploadError: uploadError,
+        uploadMissing: !!uploadError,
         timestamp: Date.now()
       }
     };
