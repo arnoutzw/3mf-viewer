@@ -4670,13 +4670,24 @@ async function uploadForQuote(file) {
   }
 
   const uid = (galleryAuth.currentUser && galleryAuth.currentUser.uid) || 'anon';
-
-  const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const storagePath = `custom_prints/${uid}/${Date.now()}_${sanitized}`;
-  const ref = galleryStorage.ref(storagePath);
+  const storagePath = buildQuoteStoragePath(file, uid);
+  const ref = galleryStorage.ref().child(storagePath);
   await ref.put(file, { contentType: getQuoteUploadContentType(file) });
   const url = await ref.getDownloadURL();
   return { url, path: storagePath };
+}
+
+function buildQuoteStoragePath(file, uid) {
+  const safeUid = String(uid || 'anon').replace(/[^a-zA-Z0-9._-]/g, '_') || 'anon';
+  const originalName = String(file?.name || '').trim();
+  const ext = originalName.includes('.') ? originalName.split('.').pop().toLowerCase() : '';
+  const fallbackName = ext ? `model.${ext}` : 'model.bin';
+  const sanitized = (originalName || fallbackName).replace(/[^a-zA-Z0-9._-]/g, '_') || fallbackName;
+  const storagePath = `custom_prints/${safeUid}/${Date.now()}_${sanitized}`.replace(/^\/+|\/+$/g, '');
+  if (!storagePath || storagePath === 'custom_prints') {
+    throw new Error('Could not create a Firebase Storage path for this model');
+  }
+  return storagePath;
 }
 
 function summarizeQuoteUploadError(err) {
